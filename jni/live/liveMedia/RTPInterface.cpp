@@ -341,6 +341,8 @@ Boolean RTPInterface::sendRTPorRTCPPacketOverTCP(u_int8_t* packet, unsigned pack
   return False;
 }
 
+
+// RTP over TCP发送超时500ms
 #ifndef RTPINTERFACE_BLOCKING_WRITE_TIMEOUT_MS
 #define RTPINTERFACE_BLOCKING_WRITE_TIMEOUT_MS 500
 #endif
@@ -359,6 +361,7 @@ Boolean RTPInterface::sendDataOverTCP(int socketNum, u_int8_t const* data, unsig
 #ifdef DEBUG_SEND
       fprintf(stderr, "sendDataOverTCP: resending %d-byte send (blocking)\n", numBytesRemainingToSend); fflush(stderr);
 #endif
+		//设置发送超时!! TCP的话有发送超时 500ms
       makeSocketBlocking(socketNum, RTPINTERFACE_BLOCKING_WRITE_TIMEOUT_MS);
       sendResult = send(socketNum, (char const*)(&data[numBytesSentSoFar]), numBytesRemainingToSend, 0/*flags*/);
       if ((unsigned)sendResult != numBytesRemainingToSend) {

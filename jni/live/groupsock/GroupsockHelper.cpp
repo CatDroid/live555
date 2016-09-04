@@ -203,6 +203,8 @@ Boolean makeSocketBlocking(int sock, unsigned writeTimeoutInMilliseconds) {
   result = fcntl(sock, F_SETFL, curFlags&(~O_NONBLOCK)) >= 0;
 #endif
 
+	// 把socket设置为block 而且发送设置超时 
+	
   if (writeTimeoutInMilliseconds > 0) {
 #ifdef SO_SNDTIMEO
     struct timeval tv;
@@ -274,7 +276,7 @@ int setupStreamSocket(UsageEnvironment& env,
   }
 #endif
 
-  if (makeNonBlocking) {
+  if (makeNonBlocking) {// 可以设置socket为非阻塞
     if (!makeSocketNonBlocking(newSocket)) {
       socketErr(env, "failed to make non-blocking: ");
       closeSocket(newSocket);
