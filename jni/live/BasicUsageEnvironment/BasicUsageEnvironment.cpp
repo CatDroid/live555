@@ -20,6 +20,7 @@ along with this library; if not, write to the Free Software Foundation, Inc.,
 #include "BasicUsageEnvironment.hh"
 #include <stdio.h>
 
+#include "android_log.hh"
 
 ////////// BasicUsageEnvironment //////////
 
@@ -57,31 +58,54 @@ int BasicUsageEnvironment::getErrno() const {
 #endif
 }
 
-#include "myprintf.hh"
+
 
 
 UsageEnvironment& BasicUsageEnvironment::operator<<(char const* str) {
   if (str == NULL) str = "(NULL)"; // sanity check
-  fprintf(stderr, "%s", str);
+  #ifdef __ANDROID__ 
+  	ALOG_ENV("%s", str);
+  #else
+  	fprintf(stderr, "%s", str);
+  #endif 
   return *this;
 }
 
 UsageEnvironment& BasicUsageEnvironment::operator<<(int i) {
-  fprintf(stderr, "%d", i);
+	
+  #ifdef __ANDROID__ 
+  	ALOG_ENV("%d", i);
+  #else
+ 	fprintf(stderr, "%d", i);
+  #endif 
   return *this;
 }
 
 UsageEnvironment& BasicUsageEnvironment::operator<<(unsigned u) {
-  fprintf(stderr, "%u", u);
+
+  #ifdef __ANDROID__ 
+ 	ALOG_ENV("%u", u);
+  #else
+  	fprintf(stderr, "%u", u);
+  #endif 
   return *this;
 }
 
 UsageEnvironment& BasicUsageEnvironment::operator<<(double d) {
-  fprintf(stderr, "%f", d);
+	
+  #ifdef __ANDROID__ 
+  	ALOG_ENV("%f", d);
+  #else
+  	fprintf(stderr, "%f", d);
+  #endif 
   return *this;
 }
 
 UsageEnvironment& BasicUsageEnvironment::operator<<(void* p) {
-  fprintf(stderr, "%p", p);
+  #ifdef __ANDROID__ 
+  	ALOG_ENV("%p", p);
+  #else
+  	fprintf(stderr, "%p", p);
+  #endif
   return *this;
 }

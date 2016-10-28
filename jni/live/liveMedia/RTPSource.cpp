@@ -323,16 +323,16 @@ void RTPReceptionStats
     // This is the first timestamp that we've seen, so use the current
     // 'wall clock' time as the synchronization time.  (This will be
     // corrected later when we receive RTCP SRs.)
-    fSyncTimestamp = rtpTimestamp;
+    fSyncTimestamp = rtpTimestamp; // 接收到第一个包(帧)的时间
     fSyncTime = timeNow;
   }
 
-  int timestampDiff = rtpTimestamp - fSyncTimestamp;
+  int timestampDiff = rtpTimestamp - fSyncTimestamp; // 两个帧之间的时间间隔
       // Note: This works even if the timestamp wraps around
       // (as long as "int" is 32 bits)
 
   // Divide this by the timestamp frequency to get real time:
-  double timeDiff = timestampDiff/(double)timestampFrequency;
+  double timeDiff = timestampDiff/(double)timestampFrequency; // 除以时钟戳频率得到真实时间 单位秒
 
   // Add this to the 'sync time' to get our result:
   unsigned const million = 1000000;

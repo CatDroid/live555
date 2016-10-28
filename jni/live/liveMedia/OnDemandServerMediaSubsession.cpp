@@ -21,7 +21,7 @@ along with this library; if not, write to the Free Software Foundation, Inc.,
 
 #include "OnDemandServerMediaSubsession.hh"
 #include <GroupsockHelper.hh>
-#include "myprintf.hh"
+
 OnDemandServerMediaSubsession
 ::OnDemandServerMediaSubsession(UsageEnvironment& env,
 				Boolean reuseFirstSource,

@@ -23,7 +23,7 @@ along with this library; if not, write to the Free Software Foundation, Inc.,
 #include "Locale.hh"
 #include "GroupsockHelper.hh"
 #include <ctype.h>
-
+#include "android_log.hh"
 ////////// MediaSession //////////
 
 MediaSession* MediaSession::createNew(UsageEnvironment& env,
@@ -404,6 +404,9 @@ Boolean MediaSession::parseSDPAttribute_range(char const* sdpLine) {
 
   double playStartTime;
   double playEndTime;
+
+  // MediaSession 和 MediaSubSession 都会解析 a=range: npt =<startTime>-<endTime>
+  //	但是解析不同的地方  session  m=video  m=audio
   if (parseRangeAttribute(sdpLine, playStartTime, playEndTime)) {
     parseSuccess = True;
     if (playStartTime > fMaxPlayStartTime) {
@@ -647,7 +650,7 @@ MediaSubsession::~MediaSubsession() {
   delete[] fSessionId;
 
   // Empty and delete our 'attributes table':
-  SDPAttribute* attr;
+  SDPAttribute* attr;	// 删除所有a=fmtp: 附加的属性
   while ((attr = (SDPAttribute*)fAttributeTable->RemoveNext()) != NULL) {
     delete attr;
   }
@@ -893,7 +896,7 @@ Boolean MediaSubsession::setClientPortNum(unsigned short portNum) {
 
 char const* MediaSubsession::attrVal_str(char const* attrName) const {
   SDPAttribute* attr = (SDPAttribute*)(fAttributeTable->Lookup(attrName));
-  if (attr == NULL) return "";
+  if (attr == NULL) return "";	// 没有找到返回""  
 
   return attr->strValue();
 }
@@ -907,7 +910,7 @@ char const* MediaSubsession::attrVal_strToLower(char const* attrName) const {
 
 unsigned MediaSubsession::attrVal_int(char const* attrName) const {
   SDPAttribute* attr = (SDPAttribute*)(fAttributeTable->Lookup(attrName));
-  if (attr == NULL) return 0;
+  if (attr == NULL) return 0; // 没有找到返回0 
 
   return attr->intValue();
 }
@@ -966,11 +969,18 @@ void MediaSubsession::setSessionId(char const* sessionId) {
 }
 
 double MediaSubsession::getNormalPlayTime(struct timeval const& presentationTime) {
+	
   if (rtpSource() == NULL || rtpSource()->timestampFrequency() == 0) return 0.0; // no RTP source, or bad freq!
 
+  ALOGI("SynchronizedUsingRTCP = %d  infoIsNew = %d " , 
+  		rtpSource()->hasBeenSynchronizedUsingRTCP() ,
+  		rtpInfo.infoIsNew
+  		);
+  
   // First, check whether our "RTPSource" object has already been synchronized using RTCP.
   // If it hasn't, then - as a special case - we need to use the RTP timestamp to compute the NPT.
   if (!rtpSource()->hasBeenSynchronizedUsingRTCP()) {
+  	
     if (!rtpInfo.infoIsNew) return 0.0; // the "rtpInfo" structure has not been filled in
     u_int32_t timestampOffset = rtpSource()->curPacketRTPTimestamp() - rtpInfo.timestamp;
     double nptOffset = (timestampOffset/(double)(rtpSource()->timestampFrequency()))*scale();
@@ -1006,7 +1016,7 @@ void MediaSubsession
   // Replace any existing attribute record with this name (except that the 'valueIsHexadecimal'
   // property will be inherited from it, if it exists).
   SDPAttribute* oldAttr = (SDPAttribute*)fAttributeTable->Lookup(name);
-  if (oldAttr != NULL) {
+  if (oldAttr != NULL) {	// 如果原来已经有这个属性 a=fmtp:<name> 重复定义会删除原来的
     valueIsHexadecimal = oldAttr->valueIsHexadecimal();
     fAttributeTable->Remove(name);
     delete oldAttr;
@@ -1048,7 +1058,7 @@ Boolean MediaSubsession::parseSDPAttribute_rtpmap(char const* sdpLine) {
   unsigned numChannels = 1;
   if (sscanf(sdpLine, "a=rtpmap: %u %[^/]/%u/%u",
 	     &rtpmapPayloadFormat, codecName, &rtpTimestampFrequency,
-	     &numChannels) == 4
+	     &numChannels) == 4 	// a=rtpmap:98 L16/16000/2 获取通道数
       || sscanf(sdpLine, "a=rtpmap: %u %[^/]/%u",
 	     &rtpmapPayloadFormat, codecName, &rtpTimestampFrequency) == 3
       || sscanf(sdpLine, "a=rtpmap: %u %s",
@@ -1062,6 +1072,7 @@ Boolean MediaSubsession::parseSDPAttribute_rtpmap(char const* sdpLine) {
 	Locale l("POSIX");
 	for (char* p = codecName; *p != '\0'; ++p) *p = toupper(*p);
       }
+      
       delete[] fCodecName; fCodecName = strDup(codecName);
       fRTPTimestampFrequency = rtpTimestampFrequency;
       fNumChannels = numChannels;
@@ -1070,11 +1081,16 @@ Boolean MediaSubsession::parseSDPAttribute_rtpmap(char const* sdpLine) {
   /*
 
   如果有a=rtpmap:<payloadformat>  fCodecName/rtpTimestampFrequency
-  D/RtspServer( 1998): m=video 5006 RTP/AVP 96
-  D/RtspServer( 1998): a=rtpmap:96 H264/90000  <== 如果rtpmap的payloadformat 跟m中的一样 H264 就是解码器的名字 
+  m=video 5006 RTP/AVP 96
+  a=rtpmap:96 H264/90000  <== 如果rtpmap的payloadformat 跟m中的一样 H264 就是解码器的名字 
 
 
   m=video 0 RTP/AVP 26  也有可能没有 a=rtpmap:26 这种后面lookupPayloadFormat根据payloadformat来检查 
+
+
+  m=audio 49232 RTP/AVP 98
+  a=rtpmap:98 L16/16000/2	<==== L16 和 H264都是codecName 
+			
 
   */
   delete[] codecName;
@@ -1113,6 +1129,7 @@ Boolean MediaSubsession::parseSDPAttribute_range(char const* sdpLine) {
   double playStartTime;
   double playEndTime;
   if (parseRangeAttribute(sdpLine, playStartTime, playEndTime)) {
+  	// 取出a=range:npt=<startTime>-<endTime>的时间
     parseSuccess = True;
     if (playStartTime > fPlayStartTime) {
       fPlayStartTime = playStartTime;
@@ -1138,10 +1155,17 @@ Boolean MediaSubsession::parseSDPAttribute_fmtp(char const* sdpLine) {
   // Later: Check that payload format number matches; #####
   do {
     if (strncmp(sdpLine, "a=fmtp:", 7) != 0) break; sdpLine += 7;
-    while (isdigit(*sdpLine)) ++sdpLine;
+    while (isdigit(*sdpLine)) ++sdpLine; // 跳过数字
+
+/*
+a=fmtp:96 packetization-mode=1;profile-level-id=42c01e;sprop-parameter-sets=Z0LAHpp0A8A82AiAAAADAIAAAB5HixdQ,aM48gA==;
+
+a=fmtp:96 audio-channel=2;audio-sample-rate=44100;
+
+*/
 
     // The remaining "sdpLine" should be a sequence of
-    //     <name>=<value>;
+    //     <name>=<value>;		< 结束应该有冒号
     // or
     //     <name>;
     // parameter assignments.  Look at each of these.
@@ -1162,7 +1186,7 @@ Boolean MediaSubsession::parseSDPAttribute_fmtp(char const* sdpLine) {
 	  setAttribute(nameStr);
 	} else {
 	  // <name>=<value>
-	  setAttribute(nameStr, valueStr);
+	  setAttribute(nameStr, valueStr);	//  a=fmtp:<format> <format specific parameters>
 	}
       }
 
@@ -1289,7 +1313,7 @@ Boolean MediaSubsession::createSourceObjects(int useSpecialRTPoffset) {
 	fReadSource = MP3FromADUSource::createNew(env(), fRTPSource,
 						  False /*no ADU header*/);
       } else if (strcmp(fCodecName, "MP4A-LATM") == 0) { // MPEG-4 LATM audio
-	fReadSource = fRTPSource
+	fReadSource = fRTPSource		// AAC音频 a=rtpmap:97 MP4A-LATM/44100/2
 	  = MPEG4LATMAudioRTPSource::createNew(env(), fRTPSocket,
 					       fRTPPayloadFormat,
 					       fRTPTimestampFrequency);

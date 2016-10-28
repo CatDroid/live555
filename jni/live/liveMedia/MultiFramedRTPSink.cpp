@@ -23,7 +23,7 @@ along with this library; if not, write to the Free Software Foundation, Inc.,
 #include "GroupsockHelper.hh"
 
 #define DEBUG 1
-#include "myprintf.hh"
+
 ////////// MultiFramedRTPSink //////////
 
 void MultiFramedRTPSink::setPacketSizes(unsigned preferredPacketSize,

@@ -181,6 +181,8 @@ void MultiFramedRTPSource::doGetNextFrame1() {
 		    fCurPacketRTPSeqNum, fCurPacketRTPTimestamp,
 		    fPresentationTime, fCurPacketHasBeenSynchronizedUsingRTCP,
 		    fCurPacketMarkerBit);
+    // fPresentationTime 是绝对时间  是一开始的时间+(时间戳的差值)+()+()...
+    // fCurPacketRTPTimestamp 是rtp header的时间戳 需要除以90000
     fFrameSize += frameSize;
 
     if (!nextPacket->hasUsableData()) {
@@ -222,11 +224,12 @@ void MultiFramedRTPSource
 
 #define ADVANCE(n) do { bPacket->skip(n); } while (0)
 
+// 读取到一个RTP包
 void MultiFramedRTPSource::networkReadHandler(MultiFramedRTPSource* source, int /*mask*/) {
   source->networkReadHandler1();
 }
 
-void MultiFramedRTPSource::networkReadHandler1() {
+void MultiFramedRTPSource::networkReadHandler1() {// 读取到一个RTP包
   BufferedPacket* bPacket = fPacketReadInProgress;
   if (bPacket == NULL) {
     // Normal case: Get a free BufferedPacket descriptor to hold the new network packet:

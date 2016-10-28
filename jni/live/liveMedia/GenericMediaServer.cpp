@@ -26,7 +26,7 @@ along with this library; if not, write to the Free Software Foundation, Inc.,
 #endif
 
 #define DEBUG
-#include "myprintf.hh"
+
 ////////// GenericMediaServer implementation //////////
 
 void GenericMediaServer::addServerMediaSession(ServerMediaSession* serverMediaSession) {

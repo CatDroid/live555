@@ -193,12 +193,11 @@ LOCAL_C_INCLUDES += \
 	$(LOCAL_PATH)/live/liveMedia/include \
 	$(LOCAL_PATH)/live/BasicUsageEnvironment/include \
 	$(LOCAL_PATH)/live/groupsock/include \
-	$(LOCAL_PATH)/live/UsageEnvironment/include  
+	$(LOCAL_PATH)/live/UsageEnvironment/include \
+	$(LOCAL_PATH)/include
 
 LOCAL_LDLIBS += -llog  
 
- 
-	
 
 LOCAL_CPPFLAGS += -DNULL=0 -DNO_SSTREAM=1  -fexceptions -DXLOCALE_NOT_USED=1
 

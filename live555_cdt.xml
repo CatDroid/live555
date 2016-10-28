@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cdtprojectproperties>
+<section name="org.eclipse.cdt.internal.ui.wizards.settingswizards.IncludePaths">
+<language name="c,cpp">
+<includepath>D:\android-ndk-r10d\platforms\android-21\arch-arm\usr\include</includepath>
+<includepath>D:\android-ndk-r10d\sources\cxx-stl\system\include</includepath>
+<includepath>D:\android-ndk-r10d\toolchains\arm-linux-androideabi-4.8\prebuilt\windows-x86_64\lib\gcc\arm-linux-androideabi\4.8\include</includepath>
+<includepath>D:\android-ndk-r10d\toolchains\arm-linux-androideabi-4.8\prebuilt\windows-x86_64\lib\gcc\arm-linux-androideabi\4.8\include-fixed</includepath>
+<includepath workspace_path="true">/live555/jni/live/liveMedia/include</includepath>
+<includepath workspace_path="true">/live555/jni/live/BasicUsageEnvironment/include</includepath>
+<includepath workspace_path="true">/live555/jni/live/groupsock/include</includepath>
+<includepath workspace_path="true">/live555/jni/live/UsageEnvironment/include</includepath>
+
+</language>
+</section>
+<section name="org.eclipse.cdt.internal.ui.wizards.settingswizards.Macros">
+<language name="c,cpp">
+
+</language>
+</section>
+</cdtprojectproperties>

@@ -1231,6 +1231,8 @@ Boolean RTSPClient::handlePLAYResponse(MediaSession& session, MediaSubsession& s
       while ((subsession = iter.next()) != NULL) {
 	u_int16_t seqNum; u_int32_t timestamp;
 	subsession->rtpInfo.infoIsNew = False;
+	// 服务端要在PLAY的时候 设置rtpinfo  这个用来计算相对文件时间 
+	// see  MediaSubsession::getNormalPlayTime
 	if (parseRTPInfoParams(rtpInfoParamsStr, seqNum, timestamp)) {
 	  subsession->rtpInfo.seqNum = seqNum;
 	  subsession->rtpInfo.timestamp = timestamp;
@@ -1798,16 +1800,22 @@ void RTSPClient::handleResponseBytes(int newBytesRead) {
       if (foundRequest != NULL) {
 	Boolean needToResendCommand = False; // by default...
 	if (responseCode == 200) {
+
+
+	  // 处理各种命令 
 	  // Do special-case response handling for some commands:
 	  if (strcmp(foundRequest->commandName(), "SETUP") == 0) {
 	    if (!handleSETUPResponse(*foundRequest->subsession(), sessionParamsStr, transportParamsStr, foundRequest->booleanFlags()&0x1)) break;
 	  } else if (strcmp(foundRequest->commandName(), "PLAY") == 0) {
+	  	// 之前已经把参数分割好了 scale speed range rtpInfo
 	    if (!handlePLAYResponse(*foundRequest->session(), *foundRequest->subsession(), scaleParamsStr, speedParamsStr, rangeParamsStr, rtpInfoParamsStr)) break;
 	  } else if (strcmp(foundRequest->commandName(), "TEARDOWN") == 0) {
 	    if (!handleTEARDOWNResponse(*foundRequest->session(), *foundRequest->subsession())) break;
 	  } else if (strcmp(foundRequest->commandName(), "GET_PARAMETER") == 0) {
 	    if (!handleGET_PARAMETERResponse(foundRequest->contentStr(), bodyStart, responseEnd)) break;
 	  }
+
+	  
 	} else if (responseCode == 401 && handleAuthenticationFailure(wwwAuthenticateParamsStr)) {
 	  // We need to resend the command, with an "Authorization:" header:
 	  needToResendCommand = True;
