@@ -54,7 +54,7 @@ private:
   Boolean fHaveSeenFirstPacket; // used to set initial "fNextExpectedSeqNo"
   unsigned short fNextExpectedSeqNo;
   BufferedPacket* fHeadPacket;
-  BufferedPacket* fTailPacket;
+  BufferedPacket* fTailPacket;	// 指向最后一个接收到的包
   BufferedPacket* fSavedPacket;
       // to avoid calling new/free in the common case
   Boolean fSavedPacketFree;
@@ -117,16 +117,20 @@ void MultiFramedRTPSource::doStopGettingFrames() {
 
 void MultiFramedRTPSource::doGetNextFrame() {
   if (!fAreDoingNetworkReads) {
+    // 启动背景包接收处理 
+    // 无论是TCP还是UDP最后RTP包都到这里 MultiFramedRTPSource::networkReadHandler
+    // schdule只是在select有读数据的时候 回调这个接口 并不是读取完了数据 回调
+    // 在 MultiFramedRTPSource::networkReadHandler 才会调用 RTPInterface去读取一个RTP包
     // Turn on background read handling of incoming packets:
     fAreDoingNetworkReads = True;
     TaskScheduler::BackgroundHandlerProc* handler
-      = (TaskScheduler::BackgroundHandlerProc*)&networkReadHandler;
+      = (TaskScheduler::BackgroundHandlerProc*)&networkReadHandler; 
     fRTPInterface.startNetworkReading(handler);
   }
 
   fSavedTo = fTo;
   fSavedMaxSize = fMaxSize;
-  fFrameSize = 0; // for now
+  fFrameSize = 0; // for now  开始接收下一帧  如果最后fFrameSize==0 不会回调通知客户
   fNeedDelivery = True;
   doGetNextFrame1();
 }
@@ -156,10 +160,12 @@ void MultiFramedRTPSource::doGetNextFrame1() {
 
     // Check whether we're part of a multi-packet frame, and whether
     // there was packet loss that would render this packet unusable:
+    // 检查我们是否 多包帧 的一部分  和 是否有包丢了  有包丢了的话 就会使这个包无效
     if (fCurrentPacketBeginsFrame) {
       if (packetLossPrecededThis || fPacketLossInFragmentedFrame) {
 	// We didn't get all of the previous frame.
 	// Forget any data that we used from it:
+	// 不能获取上一帧的 所有packet fFrameSize = 0 那么就不会回调通知客户端
 	fTo = fSavedTo; fMaxSize = fSavedMaxSize;
 	fFrameSize = 0;
       }
@@ -190,13 +196,17 @@ void MultiFramedRTPSource::doGetNextFrame1() {
       fReorderingBuffer->releaseUsedPacket(nextPacket);
     }
 
-    if (fCurrentPacketCompletesFrame && fFrameSize > 0) {
+    if (fCurrentPacketCompletesFrame && fFrameSize > 0) { // 如果这一帧 不完整  就会 fFrameSize=0 不通知客户端
       // We have all the data that the client wants.
       if (fNumTruncatedBytes > 0) {
 	envir() << "MultiFramedRTPSource::doGetNextFrame1(): The total received frame size exceeds the client's buffer size ("
 		<< fSavedMaxSize << ").  "
 		<< fNumTruncatedBytes << " bytes of trailing data will be dropped!\n";
       }
+
+      // 一般情况 没有更多的 在队列中等待进来的包 所以直接调用afterGetting
+      // 特殊情况 使用EventLoop 调用afterGetting 
+      
       // Call our own 'after getting' function, so that the downstream object can consume the data:
       if (fReorderingBuffer->isEmpty()) {
 	// Common case optimization: There are no more queued incoming packets, so this code will not get
@@ -204,7 +214,7 @@ void MultiFramedRTPSource::doGetNextFrame1() {
 	// directly, because there's no risk of a long chain of recursion (and thus stack overflow):
 	afterGetting(this);
       } else {
-	// Special case: Call our 'after getting' function via the event loop.
+	// Special case: Call our 'after getting' function via the event loop. 
 	nextTask() = envir().taskScheduler().scheduleDelayedTask(0,
 								 (TaskFunc*)FramedSource::afterGetting, this);
       }
@@ -241,6 +251,9 @@ void MultiFramedRTPSource::networkReadHandler1() {// 读取到一个RTP包
   do {
     struct sockaddr_in fromAddress;
     Boolean packetReadWasIncomplete = fPacketReadInProgress != NULL;
+    // 如果上一次读一个RTP包 还没有完整 fPacketReadInProgress 会被赋值 
+    // 一般UDP的话 一次recvfrom就会读到一个完整的RTP包
+    // 但是TCP的话 可能一次recvfrom读取不到一个完整的RTP包
     if (!bPacket->fillInData(fRTPInterface, fromAddress, packetReadWasIncomplete)) {
       if (bPacket->bytesAvailable() == 0) { // should not happen??
 	envir() << "MultiFramedRTPSource internal error: Hit limit when reading incoming packet over TCP\n";
@@ -248,12 +261,12 @@ void MultiFramedRTPSource::networkReadHandler1() {// 读取到一个RTP包
       fPacketReadInProgress = NULL;
       break;
     }
-    if (packetReadWasIncomplete) {
+    if (packetReadWasIncomplete) { 
       // We need additional read(s) before we can process the incoming packet:
-      fPacketReadInProgress = bPacket;
-      return;
+      fPacketReadInProgress = bPacket; 	// 代表这一次读取RTP包还不完整 下次进来networkReadHandler1就会packetReadWasIncomplete = true 
+      return;				// 没有收到完整的RTP包 立刻返回
     } else {
-      fPacketReadInProgress = NULL;
+      fPacketReadInProgress = NULL;	// 代表已经读取完毕
     }
 #ifdef TEST_LOSS
     setPacketReorderingThresholdTime(0);
@@ -271,7 +284,7 @@ void MultiFramedRTPSource::networkReadHandler1() {// 读取到一个RTP包
     // Check the RTP version number (it should be 2):
     if ((rtpHdr&0xC0000000) != 0x80000000) break;
 
-    // Check the Payload Type.
+    // Check the Payload Type. 检查负载类型 
     unsigned char rtpPayloadType = (unsigned char)((rtpHdr&0x007F0000)>>16);
     if (rtpPayloadType != rtpPayloadFormat()) {
       if (fRTCPInstanceForMultiplexedRTCPPackets != NULL
@@ -349,8 +362,8 @@ void MultiFramedRTPSource::networkReadHandler1() {// 读取到一个RTP包
 
 BufferedPacket::BufferedPacket()
   : fPacketSize(MAX_PACKET_SIZE),
-    fBuf(new unsigned char[MAX_PACKET_SIZE]),
-    fNextPacket(NULL) {
+    fBuf(new unsigned char[MAX_PACKET_SIZE]), 	// 一个RTP包的最大大小 MAX_PACKET_SIZE 65536 
+    fNextPacket(NULL) { 			// 所有RTP包连接在一起
 }
 
 BufferedPacket::~BufferedPacket() {
@@ -404,7 +417,7 @@ Boolean BufferedPacket::fillInData(RTPInterface& rtpInterface, struct sockaddr_i
 			       packetReadWasIncomplete)) {
     return False;
   }
-  fTail += numBytesRead;
+  fTail += numBytesRead; // 考虑到一个RTP包可能分成几个UDP包发送
   return True;
 }
 
@@ -531,13 +544,15 @@ Boolean ReorderingPacketBuffer::storePacket(BufferedPacket* bPacket) {
     bPacket->isFirstPacket() = True;
     fHaveSeenFirstPacket = True;
   }
-
+  
+  // 如果遇到迟来的包 将会丢弃(也就是当前的包延迟到了)
   // Ignore this packet if its sequence number is less than the one
   // that we're looking for (in this case, it's been excessively delayed).
   if (seqNumLT(rtpSeqNo, fNextExpectedSeqNo)) return False;
 
   if (fTailPacket == NULL) {
     // Common case: There are no packets in the queue; this will be the first one:
+    // 通常情况 没有包在队列 这是第一个
     bPacket->nextPacket() = NULL;
     fHeadPacket = fTailPacket = bPacket;
     return True;
@@ -545,6 +560,7 @@ Boolean ReorderingPacketBuffer::storePacket(BufferedPacket* bPacket) {
 
   if (seqNumLT(fTailPacket->rtpSeqNo(), rtpSeqNo)) {
     // The next-most common case: There are packets already in the queue; this packet arrived in order => put it at the tail:
+    // 一般情况下 按顺序接收到包 也就是后来收到的包 序号大于 先前收到的包 
     bPacket->nextPacket() = NULL;
     fTailPacket->nextPacket() = bPacket;
     fTailPacket = bPacket;
@@ -557,6 +573,7 @@ Boolean ReorderingPacketBuffer::storePacket(BufferedPacket* bPacket) {
   }
 
   // Rare case: This packet is out-of-order.  Run through the list (from the head), to figure out where it belongs:
+  // 罕见情况  收到的包是没有循序的 所以要遍历 找到合适地方插入
   BufferedPacket* beforePtr = NULL;
   BufferedPacket* afterPtr = fHeadPacket;
   while (afterPtr != NULL) {
@@ -602,6 +619,7 @@ BufferedPacket* ReorderingPacketBuffer
   // Check whether the next packet we want is already at the head
   // of the queue:
   // ASSERT: fHeadPacket->rtpSeqNo() >= fNextExpectedSeqNo
+  // 检查接收包中的序列号是否是所希望的序列号
   if (fHeadPacket->rtpSeqNo() == fNextExpectedSeqNo) {
     packetLossPreceded = fHeadPacket->isFirstPacket();
         // (The very first packet is treated as if there was packet loss beforehand.)
@@ -611,6 +629,7 @@ BufferedPacket* ReorderingPacketBuffer
   // We're still waiting for our desired packet to arrive.  However, if
   // our time threshold has been exceeded, then forget it, and return
   // the head packet instead:
+  // 等待所希望的包的到来，一段时间后丢弃
   Boolean timeThresholdHasBeenExceeded;
   if (fThresholdTime == 0) {
     timeThresholdHasBeenExceeded = True; // optimization

@@ -323,8 +323,8 @@ void RTPReceptionStats
     // This is the first timestamp that we've seen, so use the current
     // 'wall clock' time as the synchronization time.  (This will be
     // corrected later when we receive RTCP SRs.)
-    fSyncTimestamp = rtpTimestamp; // 接收到第一个包(帧)的时间
-    fSyncTime = timeNow;
+    fSyncTimestamp = rtpTimestamp; 	// 接收到一个帧的第一个包的时间
+    fSyncTime = timeNow;		// 接收到帧中第一个包 的时间戳	
   }
 
   int timestampDiff = rtpTimestamp - fSyncTimestamp; // 两个帧之间的时间间隔

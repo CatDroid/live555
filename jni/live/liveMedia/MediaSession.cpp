@@ -218,7 +218,10 @@ Boolean MediaSession::initializeWithSDP(char const* sdpDescription) {
       
       
       m=video 0 RTP/AVP 26  也有可能没有 a=rtpmap:26 这种后面lookupPayloadFormat根据payloadformat来检查
-      
+
+
+      Pal load Format = 26  就是JPEG 
+
       */
       if (subsession->parseSDPAttribute_rtpmap(sdpLine)) continue;
       
@@ -460,7 +463,7 @@ char* MediaSession::lookupPayloadFormat(unsigned char rtpPayloadType,
   // Look up the codec name and timestamp frequency for known (static)
   // RTP payload formats.
   char const* temp = NULL;
-  switch (rtpPayloadType) {
+  switch (rtpPayloadType) { // 就是 fRTPPayloadFormat 
   case 0: {temp = "PCMU"; freq = 8000; nCh = 1; break;}
   case 2: {temp = "G726-32"; freq = 8000; nCh = 1; break;}
   case 3: {temp = "GSM"; freq = 8000; nCh = 1; break;}
@@ -853,6 +856,7 @@ Boolean MediaSubsession::initiate(int useSpecialRTPoffset) {
       // Otherwise make a guess at 500 kbps.
       unsigned totSessionBandwidth
 	= fBandwidth ? fBandwidth + fBandwidth / 20 : 500;
+	#if 0 //added by luomm in 2016.07.20
       fRTCPInstance = RTCPInstance::createNew(env(), fRTCPSocket,
 					      totSessionBandwidth,
 					      (unsigned char const*)
@@ -863,6 +867,7 @@ Boolean MediaSubsession::initiate(int useSpecialRTPoffset) {
 	env().setResultMsg("Failed to create RTCP instance");
 	break;
       }
+	 #endif 
     }
 
     return True;

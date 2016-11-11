@@ -201,9 +201,10 @@ Boolean makeSocketBlocking(int sock, unsigned writeTimeoutInMilliseconds) {
 #else
   int curFlags = fcntl(sock, F_GETFL, 0);
   result = fcntl(sock, F_SETFL, curFlags&(~O_NONBLOCK)) >= 0;
+  // 把socket设置为block 	~O_NONBLOCK
 #endif
 
-	// 把socket设置为block 而且发送设置超时 
+	
 	
   if (writeTimeoutInMilliseconds > 0) {
 #ifdef SO_SNDTIMEO
@@ -211,6 +212,7 @@ Boolean makeSocketBlocking(int sock, unsigned writeTimeoutInMilliseconds) {
     tv.tv_sec = writeTimeoutInMilliseconds/1000;
     tv.tv_usec = (writeTimeoutInMilliseconds%1000)*1000;
     setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof tv);
+    // 把socket设置为block 而且发送设置超时 
 #endif
   }
 
@@ -336,6 +338,7 @@ Boolean writeSocket(UsageEnvironment& env,
 #else
 #define TTL_TYPE u_int8_t
 #endif
+  // 设置多播的TTL  区别 IP_TTL    IP_MULTICAST_TTL
   TTL_TYPE ttl = (TTL_TYPE)ttlArg;
   if (setsockopt(socket, IPPROTO_IP, IP_MULTICAST_TTL,
 		 (const char*)&ttl, sizeof ttl) < 0) {
@@ -350,10 +353,12 @@ Boolean writeSocket(UsageEnvironment& env,
 		    int socket, struct in_addr address, portNumBits portNum,
 		    unsigned char* buffer, unsigned bufferSize) {
   do {
+    // 填写目的地址 struct sockaddr_in 来sendto 
     MAKE_SOCKADDR_IN(dest, address.s_addr, portNum);
     int bytesSent = sendto(socket, (char*)buffer, bufferSize, 0,
 			   (struct sockaddr*)&dest, sizeof dest);
-    if (bytesSent != (int)bufferSize) {
+    // UDP发送 遇到错误了
+    if (bytesSent != (int)bufferSize) { 
       char tmpBuf[100];
       sprintf(tmpBuf, "writeSocket(%d), sendTo() error: wrote %d bytes instead of %u: ", socket, bytesSent, bufferSize);
       socketErr(env, tmpBuf);
@@ -584,11 +589,17 @@ Boolean socketLeaveGroupSSM(UsageEnvironment& /*env*/, int socket,
   return True;
 }
 
+/*
+如果端口动态分配的话 这里获取我们本地端口
+
+getsockname 函数返回与套接口关联的本地协议地址。
+getpeername 函数返回与套接口关联的远程协议地址。
+*/
+
 static Boolean getSourcePort0(int socket, portNumBits& resultPortNum/*host order*/) {
   sockaddr_in test; test.sin_port = 0;
   SOCKLEN_T len = sizeof test;
   if (getsockname(socket, (struct sockaddr*)&test, &len) < 0) return False;
-
   resultPortNum = ntohs(test.sin_port);
   return True;
 }
@@ -597,6 +608,7 @@ Boolean getSourcePort(UsageEnvironment& env, int socket, Port& port) {
   portNumBits portNum = 0;
   if (!getSourcePort0(socket, portNum) || portNum == 0) {
     // Hack - call bind(), then try again:
+    // 获取端口失败  这里再尝试bind绑定地址 然后再获取本地端口
     MAKE_SOCKADDR_IN(name, INADDR_ANY, 0);
     bind(socket, (struct sockaddr*)&name, sizeof name);
 

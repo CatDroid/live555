@@ -380,6 +380,7 @@ void MultiFramedRTPSink::sendPacketIfNecessary() {
 #ifdef TEST_LOSS
     if ((our_random()%10) != 0) // simulate 10% packet loss #####
 #endif
+	// 通过RTPInterface发送一个RTP包
       if (!fRTPInterface.sendPacket(fOutBuf->packet(), fOutBuf->curPacketSize())) {
 	// if failure handler has been specified, call it
 	if (fOnSendErrorFunc != NULL) (*fOnSendErrorFunc)(fOnSendErrorData);

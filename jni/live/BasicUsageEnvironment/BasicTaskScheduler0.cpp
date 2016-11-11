@@ -63,6 +63,7 @@ TaskToken BasicTaskScheduler0::scheduleDelayedTask(int64_t microseconds,
   DelayInterval timeToDelay((long)(microseconds/1000000), (long)(microseconds%1000000));
   AlarmHandler* alarmHandler = new AlarmHandler(proc, clientData, timeToDelay);
   fDelayQueue.addEntry(alarmHandler);
+  // fDelayQueue 会在 BasicTaskScheduler::SingleStep 使用  
 
   return (void*)(alarmHandler->token());
 }
@@ -73,6 +74,10 @@ void BasicTaskScheduler0::unscheduleDelayedTask(TaskToken& prevTask) {
   delete alarmHandler;
 }
 
+// 需要 创建一个线程 线程中调用
+// 	envir().taskScheduler().doEventLoop(&stream->ftloop);
+// 
+//	如果 stream->ftloop = 1 就会从doEventLoop中退出
 void BasicTaskScheduler0::doEventLoop(char volatile* watchVariable) {
   // Repeatedly loop, handling readble sockets and timed events:
   while (1) {

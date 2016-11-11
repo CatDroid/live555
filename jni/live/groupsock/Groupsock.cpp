@@ -42,7 +42,7 @@ OutputSocket::OutputSocket(UsageEnvironment& env, Port port)
 OutputSocket::~OutputSocket() {
 }
 
-// 这里写socket
+// 这里写UDP socket
 Boolean OutputSocket::write(netAddressBits address, portNumBits portNum, u_int8_t ttl,
 			    unsigned char* buffer, unsigned bufferSize) {
   struct in_addr destAddr; destAddr.s_addr = address;
@@ -57,6 +57,7 @@ Boolean OutputSocket::write(netAddressBits address, portNumBits portNum, u_int8_
   if (sourcePortNum() == 0) {
     // Now that we've sent a packet, we can find out what the
     // kernel chose as our ephemeral source port number:
+    // 由于我们已经发送了一个包 所以我们可以从内核获取一个动态分配 临时的源端口
     if (!getSourcePort(env(), socketNum(), fSourcePort)) {
       if (DebugLevel >= 1)
 	env() << *this
@@ -263,7 +264,7 @@ void Groupsock::multicastSendOnly() {
 Boolean Groupsock::output(UsageEnvironment& env, unsigned char* buffer, unsigned bufferSize,
 			  DirectedNetInterface* interfaceNotToFwdBackTo) {
   do {
-    // First, do the datagram send, to each destination:
+    // First, do the datagram send, to each destination: 通过UDP发送数据报 到所有的 目标
     Boolean writeSuccess = True;
     for (destRecord* dests = fDests; dests != NULL; dests = dests->fNext) {
       if (!write(dests->fGroupEId.groupAddress().s_addr, dests->fGroupEId.portNum(), dests->fGroupEId.ttl(),
@@ -276,7 +277,7 @@ Boolean Groupsock::output(UsageEnvironment& env, unsigned char* buffer, unsigned
     statsOutgoing.countPacket(bufferSize);
     statsGroupOutgoing.countPacket(bufferSize);
 
-    // Then, forward to our members:
+    // Then, forward to our members:	转发给我们的成员 ?? live555支持转发
     int numMembers = 0;
     if (!members().IsEmpty()) {
       numMembers =

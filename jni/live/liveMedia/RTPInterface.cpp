@@ -211,11 +211,11 @@ void RTPInterface::clearServerRequestAlternativeByteHandler(UsageEnvironment& en
 Boolean RTPInterface::sendPacket(unsigned char* packet, unsigned packetSize) {
   Boolean success = True; // we'll return False instead if any of the sends fail
 
-  // Normal case: Send as a UDP packet:
+  // Normal case: Send as a UDP packet:		通过UDP发送数据包(一个UDP socket 因为UDP支持组播)
   if (!fGS->output(envir(), packet, packetSize)) success = False;
 
-  // Also, send over each of our TCP sockets:
-  tcpStreamRecord* nextStream;
+  // Also, send over each of our TCP sockets:	通过TCP发送数据包(多个TCP socket) 也就是可以同时用UDP和TCP发送数据
+  tcpStreamRecord* nextStream;		
   for (tcpStreamRecord* stream = fTCPStreams; stream != NULL; stream = nextStream) {
     nextStream = stream->fNext; // Set this now, in case the following deletes "stream":
     if (!sendRTPorRTCPPacketOverTCP(packet, packetSize,
@@ -230,10 +230,12 @@ Boolean RTPInterface::sendPacket(unsigned char* packet, unsigned packetSize) {
 void RTPInterface
 ::startNetworkReading(TaskScheduler::BackgroundHandlerProc* handlerProc) {
   // Normal case: Arrange to read UDP packets:
+  // 一般情况: 监听UDP端口 读有效的时候回调 handlerProc
   envir().taskScheduler().
     turnOnBackgroundReadHandling(fGS->socketNum(), handlerProc, fOwner);
 
   // Also, receive RTP over TCP, on each of our TCP connections:
+  // 其他情况: RTP over TCP 监听所有的TCP连接 
   fReadHandlerProc = handlerProc;
   for (tcpStreamRecord* streams = fTCPStreams; streams != NULL;
        streams = streams->fNext) {
@@ -243,6 +245,22 @@ void RTPInterface
     // Tell it about our subChannel:
     socketDescriptor->registerRTPInterface(streams->fStreamChannelId, this);
   }
+  /*
+	UDP RTP的接收处理程序 	MultiFramedRTPSource::networkReadHandler 
+	TCP RTP的		SocketDescriptor::tcpReadHandler --> MultiFramedRTPSource::networkReadHandler
+
+		RTP包实际读取程序 RTPInterface::fReadHandlerProc (fReadHandlerProc)
+		
+	UDP RTCP的接收处理程序  RTCPInstance::incomingReportHandler
+	TCP RTCP的		SocketDescriptor::tcpReadHandler --> RTCPInstance::incomingReportHandler
+
+		RTCP包实际读取程序 RTCPInstance::incomingReportHandler(fReadHandlerProc)
+		
+	也就是 RTP或者RTCP 如果是TCP都通过 SocketDescriptor::tcpReadHandler 先一个个字节地接收 读取$包头部
+				然后从$包头部 把长度属性 保存到 对应的 RTPInterface::fNextTCPReadSize
+				最后回调上面提及的 RTPInterface::fReadHandlerProc
+	
+  */
 }
 
 Boolean RTPInterface::handleRead(unsigned char* buffer, unsigned bufferMaxSize,
@@ -253,17 +271,21 @@ Boolean RTPInterface::handleRead(unsigned char* buffer, unsigned bufferMaxSize,
   Boolean readSuccess;
   if (fNextTCPReadStreamSocketNum < 0) {
     // Normal case: read from the (datagram) 'groupsock':
+    // 一般情况  从UDP数据报读取数据  每个UDP数据报 就是一个RTP包 所以 packetReadWasIncomplete = false 
     tcpSocketNum = -1;
     readSuccess = fGS->handleRead(buffer, bufferMaxSize, bytesRead, fromAddress);
   } else {
     // Read from the TCP connection:
+    // 从TCP连接读取数据
+
+    
     tcpSocketNum = fNextTCPReadStreamSocketNum;
     tcpStreamChannelId = fNextTCPReadStreamChannelId;
 
     bytesRead = 0;
-    unsigned totBytesToRead = fNextTCPReadSize;
-    if (totBytesToRead > bufferMaxSize) totBytesToRead = bufferMaxSize;
-    unsigned curBytesToRead = totBytesToRead;
+    unsigned totBytesToRead = fNextTCPReadSize;	// 剩余需要读取的
+    if (totBytesToRead > bufferMaxSize) totBytesToRead = bufferMaxSize; 
+    unsigned curBytesToRead = totBytesToRead;	// 当前需要读取的
     int curBytesRead;
     while ((curBytesRead = readSocket(envir(), fNextTCPReadStreamSocketNum,
 				      &buffer[bytesRead], curBytesToRead,
@@ -274,6 +296,7 @@ Boolean RTPInterface::handleRead(unsigned char* buffer, unsigned bufferMaxSize,
     }
     fNextTCPReadSize -= bytesRead;
     if (fNextTCPReadSize == 0) {
+      // 已经读取完毕
       // We've read all of the data that we asked for
       readSuccess = True;
     } else if (curBytesRead < 0) {
@@ -282,7 +305,11 @@ Boolean RTPInterface::handleRead(unsigned char* buffer, unsigned bufferMaxSize,
       readSuccess = False;
     } else {
       // We need to read more bytes, and there was not an error reading the socket
-      packetReadWasIncomplete = True;
+      packetReadWasIncomplete = True; 
+      //	
+      // TCP的话 有可能还没有读取完一个整个RTP包 
+      // 由$包头部'长度'字段 初始化 RTPInterface::fNextTCPReadSize 的 值
+      // 然后每次 调用 RTPInterface::handleRead 都根据 fNextTCPReadSize 来判断还需读取多少字节
       return True;
     }
     fNextTCPReadStreamSocketNum = -1; // default, for next time
@@ -290,6 +317,7 @@ Boolean RTPInterface::handleRead(unsigned char* buffer, unsigned bufferMaxSize,
 
   if (readSuccess && fAuxReadHandlerFunc != NULL) {
     // Also pass the newly-read packet data to our auxilliary handler:
+    // 通过fAuxReadHandlerFunc 提交 最新报数据 
     (*fAuxReadHandlerFunc)(fAuxReadHandlerClientData, buffer, bytesRead);
   }
   return readSuccess;
@@ -325,6 +353,8 @@ Boolean RTPInterface::sendRTPorRTCPPacketOverTCP(u_int8_t* packet, unsigned pack
     framingHeader[1] = streamChannelId;
     framingHeader[2] = (u_int8_t) ((packetSize&0xFF00)>>8);
     framingHeader[3] = (u_int8_t) (packetSize&0xFF);
+    // 流数据 比如RTP包 包装用 $ + channelID + 网络字节序的两个字节长度
+    //
     if (!sendDataOverTCP(socketNum, framingHeader, 4, False)) break;
 
     if (!sendDataOverTCP(socketNum, packet, packetSize, True)) break;
@@ -348,6 +378,8 @@ Boolean RTPInterface::sendRTPorRTCPPacketOverTCP(u_int8_t* packet, unsigned pack
 #endif
 
 Boolean RTPInterface::sendDataOverTCP(int socketNum, u_int8_t const* data, unsigned dataSize, Boolean forceSendToSucceed) {
+
+  // 发送数据  socket.send  over TCP 
   int sendResult = send(socketNum, (char const*)data, dataSize, 0/*flags*/);
   if (sendResult < (int)dataSize) {
     // The TCP send() failed - at least partially.
@@ -357,11 +389,13 @@ Boolean RTPInterface::sendDataOverTCP(int socketNum, u_int8_t const* data, unsig
       // The OS's TCP send buffer has filled up (because the stream's bitrate has exceeded
       // the capacity of the TCP connection!).
       // Force this data write to succeed, by blocking if necessary until it does:
+      // 剩余要发送的字节
       unsigned numBytesRemainingToSend = dataSize - numBytesSentSoFar;
 #ifdef DEBUG_SEND
       fprintf(stderr, "sendDataOverTCP: resending %d-byte send (blocking)\n", numBytesRemainingToSend); fflush(stderr);
 #endif
-		//设置发送超时!! TCP的话有发送超时 500ms
+
+      // 第二次发送的话 设置阻塞和 发送超时!! TCP的话有发送超时 500ms
       makeSocketBlocking(socketNum, RTPINTERFACE_BLOCKING_WRITE_TIMEOUT_MS);
       sendResult = send(socketNum, (char const*)(&data[numBytesSentSoFar]), numBytesRemainingToSend, 0/*flags*/);
       if ((unsigned)sendResult != numBytesRemainingToSend) {
@@ -373,9 +407,14 @@ Boolean RTPInterface::sendDataOverTCP(int socketNum, u_int8_t const* data, unsig
 #ifdef DEBUG_SEND
 	fprintf(stderr, "sendDataOverTCP: blocking send() failed (delivering %d bytes out of %d); closing socket %d\n", sendResult, numBytesRemainingToSend, socketNum); fflush(stderr);
 #endif
+	// 如果TCP第二次发送都错误或者超时 ,无论那种情况 我们都假定TCP的连接已经失败 或者 无限期挂起
+	// 我们停止使用它 移除socket
+	// 
+	// 如果我们还使用socket这里  RTP和RTCP包的写 会在不完整 不一致的状态
 	removeStreamSocket(socketNum, 0xFF);
 	return False;
       }
+      // 把socket设置回非阻塞的
       makeSocketNonBlocking(socketNum);
 
       return True;
@@ -446,6 +485,8 @@ void SocketDescriptor::registerRTPInterface(unsigned char streamChannelId,
       = (TaskScheduler::BackgroundHandlerProc*)&tcpReadHandler;
     fEnv.taskScheduler().
       setBackgroundHandling(fOurSocketNum, SOCKET_READABLE|SOCKET_EXCEPTION, handler, this);
+    // 把fd放进 read和exception描述符集合  回调函数handler和回调参数this SocketDescriptor实例
+    // 
   }
 }
 
@@ -507,6 +548,17 @@ Boolean SocketDescriptor::tcpReadHandler1(int mask) {
   }
 
   Boolean callAgain = True;
+  /*
+  	按照TCP读取的进度   
+  	$ 		AWAITING_DOLLAR 
+  	--> 
+  	chanelID 	AWAITING_STREAM_CHANNEL_ID
+  	--> 
+  	长度		AWAITING_SIZE1 --> AWAITING_SIZE2
+  	-->
+  	数据		AWAITING_PACKET_DATA
+
+  */
   switch (fTCPReadingState) {
     case AWAITING_DOLLAR: {
       if (c == '$') {
@@ -550,36 +602,38 @@ Boolean SocketDescriptor::tcpReadHandler1(int mask) {
       // Record the information about the packet data that will be read next:
       RTPInterface* rtpInterface = lookupRTPInterface(fStreamChannelId);
       if (rtpInterface != NULL) {
-	rtpInterface->fNextTCPReadSize = size;
+	rtpInterface->fNextTCPReadSize = size; // $包头部 保存这个RTP包的大小
 	rtpInterface->fNextTCPReadStreamSocketNum = fOurSocketNum;
 	rtpInterface->fNextTCPReadStreamChannelId = fStreamChannelId;
       }
       fTCPReadingState = AWAITING_PACKET_DATA;
       break;
     }
-    case AWAITING_PACKET_DATA: {
+    case AWAITING_PACKET_DATA: { // 这里接收到数据
       callAgain = False;
       fTCPReadingState = AWAITING_DOLLAR; // the next state, unless we end up having to read more data in the current state
       // Call the appropriate read handler to get the packet data from the TCP stream:
-      RTPInterface* rtpInterface = lookupRTPInterface(fStreamChannelId);
-      if (rtpInterface != NULL) {
+      RTPInterface* rtpInterface = lookupRTPInterface(fStreamChannelId);// 根据StreamID找到RTPInterface实例
+      if (rtpInterface != NULL) { 
 	if (rtpInterface->fNextTCPReadSize == 0) {
 	  // We've already read all the data for this packet.
+	  // 已经读取完毕  不用再 调用 fReadHandlerProc 去读取数据
+	  // fReadHandlerProc 根据是 
 	  break;
 	}
 	if (rtpInterface->fReadHandlerProc != NULL) {
 #ifdef DEBUG_RECEIVE
 	  fprintf(stderr, "SocketDescriptor(socket %d)::tcpReadHandler(): reading %d bytes on channel %d\n", fOurSocketNum, rtpInterface->fNextTCPReadSize, rtpInterface->fNextTCPReadStreamChannelId);
 #endif
-	  fTCPReadingState = AWAITING_PACKET_DATA;
-	  rtpInterface->fReadHandlerProc(rtpInterface->fOwner, mask);
+	  fTCPReadingState = AWAITING_PACKET_DATA; 			// 处理一个$包 上层可以是RTP或者RTCP
+	  rtpInterface->fReadHandlerProc(rtpInterface->fOwner, mask); 	// UDP的话 收到数据后直接调用这个
 	} else {
 #ifdef DEBUG_RECEIVE
 	  fprintf(stderr, "SocketDescriptor(socket %d)::tcpReadHandler(): No handler proc for \"rtpInterface\" for channel %d; need to skip %d remaining bytes\n", fOurSocketNum, fStreamChannelId, rtpInterface->fNextTCPReadSize);
 #endif
 	  int result = readSocket(fEnv, fOurSocketNum, &c, 1, fromAddress);
-	  if (result < 0) { // error reading TCP socket, so we will no longer handle it
-#ifdef DEBUG_RECEIVE
+	  if (result < 0) { 	// error reading TCP socket, so we will no longer handle it
+#ifdef DEBUG_RECEIVE		// TCP遇到读错误  不再处理它了
 	    fprintf(stderr, "SocketDescriptor(socket %d)::tcpReadHandler(): readSocket(1 byte) returned %d (error)\n", fOurSocketNum, result);
 #endif
 	    fReadErrorOccurred = True;

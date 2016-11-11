@@ -30,9 +30,12 @@
 								<option id="com.android.gcc.option.includePath.571194178" superClass="com.android.gcc.option.includePath" valueType="includePath">
 									<listOptionValue builtIn="false" value="&quot;D:\android-ndk-r10d\platforms\android-21\arch-arm\usr\include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;D:\android-ndk-r10d\sources\cxx-stl\system\include&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/CodecANativeWin/jni}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;D:\android-ndk-r10d\toolchains\arm-linux-androideabi-4.8\prebuilt\windows-x86_64\lib\gcc\arm-linux-androideabi\4.8\include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;D:\android-ndk-r10d\toolchains\arm-linux-androideabi-4.8\prebuilt\windows-x86_64\lib\gcc\arm-linux-androideabi\4.8\include-fixed&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/live555/jni/live/liveMedia/include}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/live555/jni/live/BasicUsageEnvironment/include}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/live555/jni/live/groupsock/include}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/live555/jni/live/UsageEnvironment/include}&quot;"/>
 								</option>
 								<inputType id="com.android.gcc.inputType.165887903" superClass="com.android.gcc.inputType"/>
 							</tool>
@@ -54,5 +57,8 @@
 		<scannerConfigBuildInfo instanceId="com.android.toolchain.gcc.2069441843;com.android.toolchain.gcc.2069441843.611527194;com.android.gcc.compiler.1131690722;com.android.gcc.inputType.165887903">
 			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="com.android.AndroidPerProjectProfile"/>
 		</scannerConfigBuildInfo>
+	</storageModule>
+	<storageModule moduleId="refreshScope" versionNumber="1">
+		<resource resourceType="PROJECT" workspacePath="/live555"/>
 	</storageModule>
 </cproject>

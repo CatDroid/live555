@@ -30,6 +30,7 @@ class MultiFramedRTPSink: public RTPSink {
 public:
   void setPacketSizes(unsigned preferredPacketSize, unsigned maxPacketSize);
 
+  // 设置如果发送RTP包错误时候的回调通知函数(TCP/UDP/转发) 如果是TCP 发送失败之后 就会关闭TCP连接
   typedef void (onSendErrorFunc)(void* clientData);
   void setOnSendErrorFunc(onSendErrorFunc* onSendErrorFunc, void* onSendErrorFuncData) {
     // Can be used to set a callback function to be called if there's an error sending RTP packets on our socket.

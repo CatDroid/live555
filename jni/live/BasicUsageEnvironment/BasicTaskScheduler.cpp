@@ -63,6 +63,7 @@ void BasicTaskScheduler::schedulerTickTask() {
 #define MILLION 1000000
 #endif
 
+// "maxDelayTime" is in microseconds. µ•Œª «Œ¢√Ó 10^-6
 void BasicTaskScheduler::SingleStep(unsigned maxDelayTime) {
   fd_set readSet = fReadSet; // make a copy for this select() call
   fd_set writeSet = fWriteSet; // ditto
@@ -124,7 +125,7 @@ void BasicTaskScheduler::SingleStep(unsigned maxDelayTime) {
 #endif
 	internalError();
       }
-  }
+  }// end of selectResult < 0
 
   // Call the handler function for one readable socket:
   HandlerIterator iter(*fHandlers);

@@ -108,9 +108,9 @@ private:
   Groupsock* fGS;
   tcpStreamRecord* fTCPStreams; // optional, for RTP-over-TCP streaming/receiving
 
-  unsigned short fNextTCPReadSize;
+  unsigned short fNextTCPReadSize; // 只对TCP 这个是$包的头部中的 '长度' 字段
     // how much data (if any) is available to be read from the TCP stream
-  int fNextTCPReadStreamSocketNum;
+  int fNextTCPReadStreamSocketNum; // 只对TCP 从这个TCP端口获取数据
   unsigned char fNextTCPReadStreamChannelId;
   TaskScheduler::BackgroundHandlerProc* fReadHandlerProc; // if any
 

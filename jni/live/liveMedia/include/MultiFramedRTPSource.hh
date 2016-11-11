@@ -67,7 +67,7 @@ private:
   static void networkReadHandler(MultiFramedRTPSource* source, int /*mask*/);
   void networkReadHandler1();
 
-  Boolean fAreDoingNetworkReads;
+  Boolean fAreDoingNetworkReads;// 是否已启动背景包接收处理
   BufferedPacket* fPacketReadInProgress;
   Boolean fNeedDelivery;
   Boolean fPacketLossInFragmentedFrame;
