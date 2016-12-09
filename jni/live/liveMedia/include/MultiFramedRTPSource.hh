@@ -67,7 +67,7 @@ private:
   static void networkReadHandler(MultiFramedRTPSource* source, int /*mask*/);
   void networkReadHandler1();
 
-  Boolean fAreDoingNetworkReads;// ÊÇ·ñÒÑÆô¶¯±³¾°°ü½ÓÊÕ´¦Àí
+  Boolean fAreDoingNetworkReads;// ï¿½Ç·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Õ´ï¿½ï¿½ï¿½
   BufferedPacket* fPacketReadInProgress;
   Boolean fNeedDelivery;
   Boolean fPacketLossInFragmentedFrame;
@@ -76,6 +76,9 @@ private:
 
   // A buffer to (optionally) hold incoming pkts that have been reorderered
   class ReorderingPacketBuffer* fReorderingBuffer;
+
+private:
+  unsigned int flast_rtp ;
 };
 
 

@@ -77,12 +77,18 @@ MultiFramedRTPSource
 }
 
 void MultiFramedRTPSource::reset() {
+// 都由协议的具体实现类 处理RTP包数据部分特殊头部
+// e.g 
+// H264VideoRTPSource::processSpecialHeader
+//
   fCurrentPacketBeginsFrame = True; // by default
   fCurrentPacketCompletesFrame = True; // by default
   fAreDoingNetworkReads = False;
   fPacketReadInProgress = NULL;
   fNeedDelivery = False;
   fPacketLossInFragmentedFrame = False;
+
+  flast_rtp = 0 ;
 }
 
 MultiFramedRTPSource::~MultiFramedRTPSource() {
@@ -136,12 +142,17 @@ void MultiFramedRTPSource::doGetNextFrame() {
 }
 
 void MultiFramedRTPSource::doGetNextFrame1() {
+
+// fNeedDelivery = true 一帧还没有完整  继续接收
+// 
   while (fNeedDelivery) {
     // If we already have packet data available, then deliver it now.
     Boolean packetLossPrecededThis;
     BufferedPacket* nextPacket
       = fReorderingBuffer->getNextCompletedPacket(packetLossPrecededThis);
-    if (nextPacket == NULL) break;
+    if (nextPacket == NULL) break; 
+    // 从buffer队列取出一个BufferedPacket 没有的话 退出 doGetNextFrame1
+    // networkReadHandler1每读取完一个BufferedPacket都会调用'帧处理'doGetNextFrame1
 
     fNeedDelivery = False;
 
@@ -149,13 +160,16 @@ void MultiFramedRTPSource::doGetNextFrame1() {
       // Before using the packet, check whether it has a special header
       // that needs to be processed:
       unsigned specialHeaderSize;
+      // 由各种负载类型对应的具体实现类 来 处理 RTP包数据部分的特殊头部(e.g H264 NAL)
+      // 如果返回false 代表这个RTP包数据部分错误(也就是这个RTP包错了)
+      // processSpecialHeader 返回时候 要设置好 fCurrentPacketCompletesFrame 是否收到最后一个RTP包(完整一帧)
       if (!processSpecialHeader(nextPacket, specialHeaderSize)) {
 	// Something's wrong with the header; reject the packet:
 	fReorderingBuffer->releaseUsedPacket(nextPacket);
-	fNeedDelivery = True;
+	fNeedDelivery = True;  
 	continue;
       }
-      nextPacket->skip(specialHeaderSize);
+      nextPacket->skip(specialHeaderSize); // 跳过数据部分特殊头部 
     }
 
     // Check whether we're part of a multi-packet frame, and whether
@@ -165,7 +179,8 @@ void MultiFramedRTPSource::doGetNextFrame1() {
       if (packetLossPrecededThis || fPacketLossInFragmentedFrame) {
 	// We didn't get all of the previous frame.
 	// Forget any data that we used from it:
-	// 不能获取上一帧的 所有packet fFrameSize = 0 那么就不会回调通知客户端
+	// 不能获取上一帧的所有包 
+	// fFrameSize = 0 那么就不会回调通知客户端
 	fTo = fSavedTo; fMaxSize = fSavedMaxSize;
 	fFrameSize = 0;
       }
@@ -189,14 +204,18 @@ void MultiFramedRTPSource::doGetNextFrame1() {
 		    fCurPacketMarkerBit);
     // fPresentationTime 是绝对时间  是一开始的时间+(时间戳的差值)+()+()...
     // fCurPacketRTPTimestamp 是rtp header的时间戳 需要除以90000
-    fFrameSize += frameSize;
+    fFrameSize += frameSize; // 当前帧的大小
 
     if (!nextPacket->hasUsableData()) {
       // We're completely done with this packet now
       fReorderingBuffer->releaseUsedPacket(nextPacket);
     }
 
-    if (fCurrentPacketCompletesFrame && fFrameSize > 0) { // 如果这一帧 不完整  就会 fFrameSize=0 不通知客户端
+    // 如果这一帧 不完整  就会 fFrameSize=0 不通知客户端
+    // fCurrentPacketCompletesFrame 标记已经接收完毕
+    // fCurrentPacketCompletesFrame 由负载类型对应具体类的函数processSpecialHeader设置
+    // e.g H264VideoRtpSource::processSpecialHeader
+    if (fCurrentPacketCompletesFrame && fFrameSize > 0) { 
       // We have all the data that the client wants.
       if (fNumTruncatedBytes > 0) {
 	envir() << "MultiFramedRTPSource::doGetNextFrame1(): The total received frame size exceeds the client's buffer size ("
@@ -206,7 +225,8 @@ void MultiFramedRTPSource::doGetNextFrame1() {
 
       // 一般情况 没有更多的 在队列中等待进来的包 所以直接调用afterGetting
       // 特殊情况 使用EventLoop 调用afterGetting 
-      
+
+      // 确定有一帧数据进来
       // Call our own 'after getting' function, so that the downstream object can consume the data:
       if (fReorderingBuffer->isEmpty()) {
 	// Common case optimization: There are no more queued incoming packets, so this code will not get
@@ -219,6 +239,7 @@ void MultiFramedRTPSource::doGetNextFrame1() {
 								 (TaskFunc*)FramedSource::afterGetting, this);
       }
     } else {
+    	// 继续获取数据(继续获取packate) 继续循环
       // This packet contained fragmented data, and does not complete
       // the data that the client wants.  Keep getting data:
       fTo += frameSize; fMaxSize -= frameSize;
@@ -229,8 +250,8 @@ void MultiFramedRTPSource::doGetNextFrame1() {
 
 void MultiFramedRTPSource
 ::setPacketReorderingThresholdTime(unsigned uSeconds) {
-  fReorderingBuffer->setThresholdTime(uSeconds);
-}
+  fReorderingBuffer->setThresholdTime(uSeconds); // 下一个期待包 超时 默认 100ms
+} // subsession->rtpSource()->setPacketReorderingThresholdTime(thresh); MediaSubsession可以设置
 
 #define ADVANCE(n) do { bPacket->skip(n); } while (0)
 
@@ -297,6 +318,7 @@ void MultiFramedRTPSource::networkReadHandler1() {// 读取到一个RTP包
       break;
     }
 
+	// 检查大小
     // Skip over any CSRC identifiers in the header:
     unsigned cc = (rtpHdr>>24)&0x0F;
     if (bPacket->dataSize() < cc*4) break;
@@ -328,6 +350,15 @@ void MultiFramedRTPSource::networkReadHandler1() {// 读取到一个RTP包
       fReorderingBuffer->resetHaveSeenFirstPacket();
     }
     unsigned short rtpSeqNo = (unsigned short)(rtpHdr&0xFFFF);
+    if( rtpSeqNo != flast_rtp + 1 ){
+    	char buf[256] ;
+    	memset(buf , 0 , 256);
+    	sprintf(buf , "last %d cur %d" , flast_rtp , rtpSeqNo  );
+    	envir() << buf ;
+    }
+    flast_rtp = rtpSeqNo;
+
+
     Boolean usableInJitterCalculation
       = packetIsUsableInJitterCalculation((bPacket->data()),
 						  bPacket->dataSize());
@@ -345,13 +376,15 @@ void MultiFramedRTPSource::networkReadHandler1() {// 读取到一个RTP包
     bPacket->assignMiscParams(rtpSeqNo, rtpTimestamp, presentationTime,
 			      hasBeenSyncedUsingRTCP, rtpMarkerBit,
 			      timeNow);
+    // 检查序号
     if (!fReorderingBuffer->storePacket(bPacket)) break;
 
     readSuccess = True;
   } while (0);
-  if (!readSuccess) fReorderingBuffer->freePacket(bPacket);
+  // 如果这个包分析失败的话(rtpPayloadType) 比如 检查大小 包序号(storePacket)
+  if (!readSuccess) fReorderingBuffer->freePacket(bPacket);// 释放BufferedPacket
 
-  doGetNextFrame1();
+  doGetNextFrame1(); // 每读取完一个BufferedPacket 都会做一次'帧处理'
   // If we didn't get proper data this time, we'll get another chance
 }
 
@@ -544,11 +577,13 @@ Boolean ReorderingPacketBuffer::storePacket(BufferedPacket* bPacket) {
     bPacket->isFirstPacket() = True;
     fHaveSeenFirstPacket = True;
   }
-  
+
+  // rtpSeqNo < fNextExpectedSeqNo
   // 如果遇到迟来的包 将会丢弃(也就是当前的包延迟到了)
   // Ignore this packet if its sequence number is less than the one
   // that we're looking for (in this case, it's been excessively delayed).
   if (seqNumLT(rtpSeqNo, fNextExpectedSeqNo)) return False;
+  
 
   if (fTailPacket == NULL) {
     // Common case: There are no packets in the queue; this will be the first one:
@@ -584,7 +619,7 @@ Boolean ReorderingPacketBuffer::storePacket(BufferedPacket* bPacket) {
     }
 
     beforePtr = afterPtr;
-    afterPtr = afterPtr->nextPacket();
+    afterPtr = afterPtr->nextPacket(); // 所有的 BufferedPacket 连接在一起
   }
 
   // Link our new packet between "beforePtr" and "afterPtr":
@@ -619,7 +654,7 @@ BufferedPacket* ReorderingPacketBuffer
   // Check whether the next packet we want is already at the head
   // of the queue:
   // ASSERT: fHeadPacket->rtpSeqNo() >= fNextExpectedSeqNo
-  // 检查接收包中的序列号是否是所希望的序列号
+  // 检查接收包队列  第一个包 是不是我们要期望的序号 
   if (fHeadPacket->rtpSeqNo() == fNextExpectedSeqNo) {
     packetLossPreceded = fHeadPacket->isFirstPacket();
         // (The very first packet is treated as if there was packet loss beforehand.)
@@ -639,12 +674,14 @@ BufferedPacket* ReorderingPacketBuffer
     unsigned uSecondsSinceReceived
       = (timeNow.tv_sec - fHeadPacket->timeReceived().tv_sec)*1000000
       + (timeNow.tv_usec - fHeadPacket->timeReceived().tv_usec);
-    timeThresholdHasBeenExceeded = uSecondsSinceReceived > fThresholdTime;
+    // 接收包队列 第一个包 接收的时间  已经太久了 
+    timeThresholdHasBeenExceeded = uSecondsSinceReceived > fThresholdTime; // 100 ms  
   }
-  if (timeThresholdHasBeenExceeded) {
+  // 如果等待的包 已经超时了 期待包序号 直接去到 当前队列第一个包的序号
+  if (timeThresholdHasBeenExceeded) { 
     fNextExpectedSeqNo = fHeadPacket->rtpSeqNo();
         // we've given up on earlier packets now
-    packetLossPreceded = True;
+    packetLossPreceded = True; // 超时的话 就不要之前的包
     return fHeadPacket;
   }
 

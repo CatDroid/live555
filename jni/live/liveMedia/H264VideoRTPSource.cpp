@@ -65,30 +65,45 @@ H264VideoRTPSource::~H264VideoRTPSource() {
 Boolean H264VideoRTPSource
 ::processSpecialHeader(BufferedPacket* packet,
                        unsigned& resultSpecialHeaderSize) {
-  unsigned char* headerStart = packet->data();
+  unsigned char* headerStart = packet->data(); // 这个RTP包的数据 跳过了RTP固定包头
   unsigned packetSize = packet->dataSize();
   unsigned numBytesToSkip;
 
   // Check the 'nal_unit_type' for special 'aggregation' or 'fragmentation' packets:
   if (packetSize < 1) return False;
+
+  /* 对于H264 over RTP来说
+  	RTP包的数据 第一个字节是NAL type 
+	a.H264定义的 07(sps) 08(pps) 06(sei) 05(idr) 01(41/01)P/slice 
+  	b.RTP定义的 24~31 都是H264 NALU类型 未指定的
+   		 
+	1-23  NAL单元  单个 NAL 单元包.
+	24	  STAP-A   单一时间的组合包
+	25	  STAP-B   单一时间的组合包
+	26	  MTAP16   多个时间的组合包
+	27	  MTAP24   多个时间的组合包
+	28	  FU-A	   分片的单元
+	29	  FU-B	   分片的单元
+    
+   */
   fCurPacketNALUnitType = (headerStart[0]&0x1F);
   switch (fCurPacketNALUnitType) {
   case 24: { // STAP-A
     numBytesToSkip = 1; // discard the type byte
-    break;
+    break; // 跳过RTP包数据的第一个字节
   }
   case 25: case 26: case 27: { // STAP-B, MTAP16, or MTAP24
     numBytesToSkip = 3; // discard the type byte, and the initial DON
     break;
   }
-  case 28: case 29: { // // FU-A or FU-B
+  case 28: case 29: { //  FU-A or FU-B 分片的单元 比如I帧可能被分片 28
     // For these NALUs, the first two bytes are the FU indicator and the FU header.
     // If the start bit is set, we reconstruct the original NAL header into byte 1:
     if (packetSize < 2) return False;
     unsigned char startBit = headerStart[1]&0x80;
     unsigned char endBit = headerStart[1]&0x40;
     if (startBit) {
-      fCurrentPacketBeginsFrame = True;
+      fCurrentPacketBeginsFrame = True; // 分片单元 特殊头部 第二个字节 0x80 
 
       headerStart[1] = (headerStart[0]&0xE0)|(headerStart[1]&0x1F);
       numBytesToSkip = 1;
@@ -96,11 +111,21 @@ Boolean H264VideoRTPSource
       // The start bit is not set, so we skip both the FU indicator and header:
       fCurrentPacketBeginsFrame = False;
       numBytesToSkip = 2;
-    }
-    fCurrentPacketCompletesFrame = (endBit != 0);
+    }					// 分片单元 特殊头部 第二个字节 0x80 	
+    fCurrentPacketCompletesFrame = (endBit != 0); // 标记接收包 已经完毕 收到一个RTP包的M位为 1
     break;
+    /*
+	如果分片的话  会把NAL拆在两个字节中 
+	header[1] = (byte) (header[4] & 0x1F);  原来NALU第一个字节的0x1F
+	header[1] += 0x80;
+	header[0] = (byte) ((header[4] & 0x60) & 0xFF); 原来NALU第一个字节的0x60
+	header[0] += 28;
+	而且第二个字节0x80 代表 开始 
+	第二个字节0x40 代表 结束 
+
+    */
   }
-  default: {
+  default: { // 一个RTP包仅由一个完整的NALU组成
     // This packet contains one complete NAL unit:
     fCurrentPacketBeginsFrame = fCurrentPacketCompletesFrame = True;
     numBytesToSkip = 0;
@@ -108,6 +133,7 @@ Boolean H264VideoRTPSource
   }
   }
 
+  // RTP包数据部分的特殊头部(对于H264是NAL)
   resultSpecialHeaderSize = numBytesToSkip;
   return True;
 }

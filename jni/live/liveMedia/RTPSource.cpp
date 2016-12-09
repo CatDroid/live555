@@ -400,7 +400,9 @@ Boolean seqNumLT(u_int16_t s1, u_int16_t s2) {
   // a 'less-than' on 16-bit sequence numbers
   int diff = s2-s1;
   if (diff > 0) {
-    return (diff < 0x8000);
+    return (diff < 0x8000); 
+    // 65535
+    // 16bit序号 FFFF 就会回转
   } else if (diff < 0) {
     return (diff < -0x8000);
   } else { // diff == 0

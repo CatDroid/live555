@@ -474,8 +474,9 @@ unsigned RTSPClient::sendRequest(RequestRecord* request) {
 			  protocolStr,
 			  extraHeaders, extraHeadersWereAllocated)) {
       break;
-    }
+    }	// 打Rtsp的字段头
 
+	// 添加Rtsp的内容	
     char const* contentStr = request->contentStr(); // by default
     if (contentStr == NULL) contentStr = "";
     unsigned contentStrLen = strlen(contentStr);
@@ -533,6 +534,7 @@ unsigned RTSPClient::sendRequest(RequestRecord* request) {
       delete[] origCmd;
     }
 
+	// 通过socket发送出去
     if (send(fOutputSocketNum, cmd, strlen(cmd), 0) < 0) {
       char const* errFmt = "%s send() failed: ";
       unsigned const errLength = strlen(errFmt) + strlen(request->commandName());
@@ -634,6 +636,7 @@ static char* createRangeString(double start, double end, char const* absStartTim
   return strDup(buf);
 }
 
+// 设置Rtsp的头字段
 Boolean RTSPClient::setRequestFields(RequestRecord* request,
 				     char*& cmdURL, Boolean& cmdURLWasAllocated,
 				     char const*& protocolStr,
@@ -803,12 +806,14 @@ Boolean RTSPClient::setRequestFields(RequestRecord* request,
     }
     
     if (strcmp(request->commandName(), "PLAY") == 0) {
+    	// 如果是PLAY名字  添加相关头字段 
       // Create possible "Session:", "Scale:", "Speed:", and "Range:" headers;
       // these make up the 'extra headers':
       char* sessionStr = createSessionString(sessionId);
       char* scaleStr = createScaleString(request->scale(), originalScale);
       float speed = request->session() != NULL ? request->session()->speed() : request->subsession()->speed();
       char* speedStr = createSpeedString(speed);
+      // 添加 Range: npt= 其实范围
       char* rangeStr = createRangeString(request->start(), request->end(), request->absStartTime(), request->absEndTime());
       extraHeaders = new char[strlen(sessionStr) + strlen(scaleStr) + strlen(speedStr) + strlen(rangeStr) + 1];
       extraHeadersWereAllocated = True;

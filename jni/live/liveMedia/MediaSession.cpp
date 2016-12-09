@@ -344,6 +344,17 @@ Boolean MediaSession::parseSDPLine_c(char const* sdpLine) {
     fConnectionEndpointName = connectionEndpointName;
     return True;
   }
+  /*
+		v=0
+		o=- 0 0 IN IP4 192.168.43.1
+		s=Digua
+		i=N/A
+		c=IN IP4 192.168.43.26  < ==  这个就是客户端 自己的IP地址
+		t=0 0
+		a=recvonly
+		m=video 5006 RTP/AVP 96
+		a=rtpmap:96 H264/90000
+   */
 
   return False;
 }
@@ -712,6 +723,7 @@ Boolean MediaSubsession::initiate(int useSpecialRTPoffset) {
     tempAddr.s_addr = connectionEndpointAddress();
         // This could get changed later, as a result of a RTSP "SETUP"
 
+	// 如果 服务端 指定了 客户端的端口 在SDP中
     if (fClientPortNum != 0 && (honorSDPPortChoice || IsMulticastAddress(tempAddr.s_addr))) {
       // The sockets' port numbers were specified for us.  Use these:
       Boolean const protocolIsRTP = strcmp(fProtocolName, "RTP") == 0;
@@ -832,8 +844,8 @@ Boolean MediaSubsession::initiate(int useSpecialRTPoffset) {
     // Try to use a big receive buffer for RTP - at least 0.1 second of
     // specified bandwidth and at least 50 KB
     unsigned rtpBufSize = fBandwidth * 25 / 2; // 1 kbps * 0.1 s = 12.5 bytes
-    if (rtpBufSize < 50 * 1024)
-      rtpBufSize = 50 * 1024;
+    if (rtpBufSize < 50 * 1024) // SDP中是否有 b=AS:
+      rtpBufSize = 50 * 1024;	// 设置接收的Buffer大小
     increaseReceiveBufferTo(env(), fRTPSocket->socketNum(), rtpBufSize);
 
     if (isSSM() && fRTCPSocket != NULL) {

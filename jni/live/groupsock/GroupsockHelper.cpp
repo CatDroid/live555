@@ -458,8 +458,11 @@ static void clearMulticastAllSocketOption(int socket) {
 #endif
 }
 
+// 会判断IP地址 是否group address 224.0.0.1
 Boolean socketJoinGroup(UsageEnvironment& env, int socket,
 			netAddressBits groupAddress){
+
+
   if (!IsMulticastAddress(groupAddress)) return True; // ignore this case
 
 /*
@@ -480,9 +483,17 @@ imr_interface参数就是指定一个特定的设备接口
 
 
 */
+
+
   struct ip_mreq imr;
   imr.imr_multiaddr.s_addr = groupAddress;
   imr.imr_interface.s_addr = ReceivingInterfaceAddr;
+
+
+
+  env << "socketJoinGroup multiaddr " << inet_ntoa(imr.imr_multiaddr) ;
+  env << "socketJoinGroup rece addr " << inet_ntoa(imr.imr_interface) ;
+
   if (setsockopt(socket, IPPROTO_IP, IP_ADD_MEMBERSHIP,
 		 (const char*)&imr, sizeof (struct ip_mreq)) < 0) {
 #if defined(__WIN32__) || defined(_WIN32)
