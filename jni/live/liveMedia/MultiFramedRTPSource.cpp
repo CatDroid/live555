@@ -197,7 +197,7 @@ void MultiFramedRTPSource::doGetNextFrame1() {
     }
 
     // The packet is usable. Deliver all or part of it to our caller:
-    unsigned frameSize;
+    unsigned frameSize; // 包里面的数据拷贝到用户指定的buffer
     nextPacket->use(fTo, fMaxSize, frameSize, fNumTruncatedBytes,
 		    fCurPacketRTPSeqNum, fCurPacketRTPTimestamp,
 		    fPresentationTime, fCurPacketHasBeenSynchronizedUsingRTCP,
@@ -369,6 +369,10 @@ void MultiFramedRTPSource::networkReadHandler1() {// 读取到一个RTP包
 			  timestampFrequency(),
 			  usableInJitterCalculation, presentationTime,
 			  hasBeenSyncedUsingRTCP, bPacket->dataSize());
+	// 由 RTPReceptionStatsDB::noteIncomingPacket 
+	//		RTPReceptionStats::noteIncomingPacket @ RTPSource.cpp 计算出
+	// 可以通过 (RTPSource*)fSource->hasBeenSynchronizedUsingRTCP() 获取当前帧时间戳是否已经用RTCP同步了
+	// 
 
     // Fill in the rest of the packet descriptor, and store it:
     struct timeval timeNow;
@@ -508,7 +512,7 @@ void BufferedPacket::use(unsigned char* to, unsigned toSize,
 
   rtpSeqNo = fRTPSeqNo;
   rtpTimestamp = fRTPTimestamp;
-  presentationTime = fPresentationTime;
+  presentationTime = fPresentationTime; // 这样间接把时间更新到FrameSource.fPresentationTime
   hasBeenSyncedUsingRTCP = fHasBeenSyncedUsingRTCP;
   rtpMarkerBit = fRTPMarkerBit;
 

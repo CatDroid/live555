@@ -868,6 +868,8 @@ Boolean MediaSubsession::initiate(int useSpecialRTPoffset) {
       // Otherwise make a guess at 500 kbps.
       unsigned totSessionBandwidth
 	= fBandwidth ? fBandwidth + fBandwidth / 20 : 500;
+
+	  // 每个MediaSubSession对应一个RTCPInstance  
 	#if 0 //added by luomm in 2016.07.20
       fRTCPInstance = RTCPInstance::createNew(env(), fRTCPSocket,
 					      totSessionBandwidth,
@@ -985,6 +987,7 @@ void MediaSubsession::setSessionId(char const* sessionId) {
   fSessionId = strDup(sessionId);
 }
 
+// NPT是跟MediaSubsession相关 
 double MediaSubsession::getNormalPlayTime(struct timeval const& presentationTime) {
 	
   if (rtpSource() == NULL || rtpSource()->timestampFrequency() == 0) return 0.0; // no RTP source, or bad freq!
@@ -997,7 +1000,10 @@ double MediaSubsession::getNormalPlayTime(struct timeval const& presentationTime
   // First, check whether our "RTPSource" object has already been synchronized using RTCP.
   // If it hasn't, then - as a special case - we need to use the RTP timestamp to compute the NPT.
   if (!rtpSource()->hasBeenSynchronizedUsingRTCP()) {
-  	
+	// 如果服务器没有发送RTCP包进行同步的话 跑到这里来 
+	// 不使用presentationTime来计算npt 
+	// 只使用rtp包的时间戳来计算 
+	
     if (!rtpInfo.infoIsNew) return 0.0; // the "rtpInfo" structure has not been filled in
     u_int32_t timestampOffset = rtpSource()->curPacketRTPTimestamp() - rtpInfo.timestamp;
     double nptOffset = (timestampOffset/(double)(rtpSource()->timestampFrequency()))*scale();
@@ -1007,16 +1013,22 @@ double MediaSubsession::getNormalPlayTime(struct timeval const& presentationTime
   } else {
     // Common case: We have been synchronized using RTCP.  This means that the "presentationTime" parameter
     // will be accurate, and so we should use this to compute the NPT.
+
+	// 如果已经通过RTCP来同步的话  参数presentationTime是被计算过(通过RTCP给出的NPT和RTP时间)
+	
     double ptsDouble = (double)(presentationTime.tv_sec + presentationTime.tv_usec/1000000.0);
 
     if (rtpInfo.infoIsNew) {
       // This is the first time we've been called with a synchronized presentation time since the "rtpInfo"
       // structure was last filled in.  Use this "presentationTime" to compute "fNPT_PTS_Offset":
       if (seqNumLT(rtpSource()->curPacketRTPSeqNum(), rtpInfo.seqNum)) return -0.1; // sanity check; ignore old packets
-      u_int32_t timestampOffset = rtpSource()->curPacketRTPTimestamp() - rtpInfo.timestamp;
-      double nptOffset = (timestampOffset/(double)(rtpSource()->timestampFrequency()))*scale();
-      double npt = playStartTime() + nptOffset;
-      fNPT_PTS_Offset = npt - ptsDouble*scale();
+
+	  u_int32_t timestampOffset = rtpSource()->curPacketRTPTimestamp() - rtpInfo.timestamp; // (该媒体单位类型 e.g 90k )
+      double nptOffset = (timestampOffset/(double)(rtpSource()->timestampFrequency()))*scale();// 计算出时间戳相对值(秒单位)
+      double npt = playStartTime() + nptOffset; // rtp包时间戳 相对开始时候 RTP-Info: rtptime=0
+												// 这个就是没有RTCP同步的返回值  Range: npt=0.000-
+
+	  fNPT_PTS_Offset = npt - ptsDouble*scale();
       rtpInfo.infoIsNew = False; // for next time
 
       return npt;
@@ -1089,9 +1101,9 @@ Boolean MediaSubsession::parseSDPAttribute_rtpmap(char const* sdpLine) {
 	Locale l("POSIX");
 	for (char* p = codecName; *p != '\0'; ++p) *p = toupper(*p);
       }
-      
+      // a=rtpmap:96 H264/90000
       delete[] fCodecName; fCodecName = strDup(codecName);
-      fRTPTimestampFrequency = rtpTimestampFrequency;
+      fRTPTimestampFrequency = rtpTimestampFrequency; // = 90000 90k
       fNumChannels = numChannels;
     }
   }
@@ -1146,13 +1158,14 @@ Boolean MediaSubsession::parseSDPAttribute_range(char const* sdpLine) {
   double playStartTime;
   double playEndTime;
   if (parseRangeAttribute(sdpLine, playStartTime, playEndTime)) {
+  	// 每一个媒体SDP都可以有自己的 a=range:npt= 开始npt时间
   	// 取出a=range:npt=<startTime>-<endTime>的时间
     parseSuccess = True;
     if (playStartTime > fPlayStartTime) {
       fPlayStartTime = playStartTime;
       if (playStartTime > fParent.playStartTime()) {
-	fParent.playStartTime() = playStartTime;
-      }
+	fParent.playStartTime() = playStartTime; // MediaSession.fMaxPlayStartTime 设置为所有SubSession中最大的
+      }// fParent.playStartTime() PLAY命令回复Range:npt=可以修改
     }
     if (playEndTime > fPlayEndTime) {
       fPlayEndTime = playEndTime;
@@ -1394,7 +1407,9 @@ Boolean MediaSubsession::createSourceObjects(int useSpecialRTPoffset) {
 					      fRTPPayloadFormat,
 					      fRTPTimestampFrequency);
       } else if (strcmp(fCodecName, "H264") == 0) {
-	fReadSource = fRTPSource
+      // MediaSubSession
+      // 接收端 在这里创建Medium/MediaSource/FramedSouce/RTPSouce/MultiFramedRTPSouce/H264VideoRTPSource
+	fReadSource = fRTPSource 
 	  = H264VideoRTPSource::createNew(env(), fRTPSocket,
 					  fRTPPayloadFormat,
 					  fRTPTimestampFrequency);

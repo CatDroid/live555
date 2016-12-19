@@ -205,4 +205,6 @@ LOCAL_CPPFLAGS += -DNULL=0 -DNO_SSTREAM=1  -fexceptions -DXLOCALE_NOT_USED=1
 #include <xlocale.h> // because, on some systems, <locale.h> doesn't include <xlocale.h>; this makes sure that we get both
    
 include $(BUILD_SHARED_LIBRARY)  
+#include $(BUILD_STATIC_LIBRARY)
+
 

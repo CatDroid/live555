@@ -1134,6 +1134,9 @@ Boolean RTSPClient::parseRTPInfoParams(char const*& paramsStr, u_int16_t& seqNum
   // "paramsStr" now consists of a ';'-separated list of parameters, ending with ',' or '\0'.
   char* field = strDupSize(paramsStr);
 
+  // 服务端返回  URI+Header(包含RTP-Info)+SDP
+  // RTP-Info: url=rtsp://192.168.43.1:8086/trackID=1;seq=0;rtptime=0
+  // 
   Boolean sawSeq = False, sawRtptime = False;
   while (sscanf(paramsStr, "%[^;,]", field) == 1) {
     if (sscanf(field, "seq=%hu", &seqNum) == 1) {
@@ -1224,7 +1227,7 @@ Boolean RTSPClient::handlePLAYResponse(MediaSession& session, MediaSubsession& s
       if (speedParamsStr != NULL && !parseSpeedParam(speedParamsStr, session.speed())) break;
       speedOK = True;
       Boolean startTimeIsNow;
-      if (rangeParamsStr != NULL &&
+      if (rangeParamsStr != NULL && // PLAY命令回复  Header包含 Range: 字段
 	  !parseRangeParam(rangeParamsStr,
 			   session.playStartTime(), session.playEndTime(),
 			   session._absStartTime(), session._absEndTime(),
@@ -1239,7 +1242,9 @@ Boolean RTSPClient::handlePLAYResponse(MediaSession& session, MediaSubsession& s
 	// 服务端要在PLAY的时候 设置rtpinfo  这个用来计算相对文件时间 
 	// see  MediaSubsession::getNormalPlayTime
 	if (parseRTPInfoParams(rtpInfoParamsStr, seqNum, timestamp)) {
-	  subsession->rtpInfo.seqNum = seqNum;
+		// RTP-Info: url=rtsp://192.168.43.1:8086/trackID=1;seq=0;rtptime=0
+	 	// 
+	  subsession->rtpInfo.seqNum = seqNum; // 保存在每个SubSession里面
 	  subsession->rtpInfo.timestamp = timestamp;
 	  subsession->rtpInfo.infoIsNew = True;
 	}
@@ -1247,6 +1252,7 @@ Boolean RTSPClient::handlePLAYResponse(MediaSession& session, MediaSubsession& s
 	if (subsession->rtpSource() != NULL) subsession->rtpSource()->enableRTCPReports() = True; // start sending RTCP "RR"s now
       }
     } else {
+      // 在一个subsession上 发送PLAY命令 ???
       // The command was on a subsession
       if (scaleParamsStr != NULL && !parseScaleParam(scaleParamsStr, subsession.scale())) break;
       scaleOK = True;
@@ -1902,7 +1908,7 @@ RTSPClient::RequestRecord::RequestRecord(unsigned cseq, char const* commandName,
 					 double start, double end, float scale, char const* contentStr)
   : fNext(NULL), fCSeq(cseq), fCommandName(commandName), fSession(session), fSubsession(subsession), fBooleanFlags(booleanFlags),
     fStart(start), fEnd(end), fAbsStartTime(NULL), fAbsEndTime(NULL), fScale(scale), fContentStr(strDup(contentStr)), fHandler(handler) {
-}
+} // fStart通过 RequestRecord.start() 返回引用来修改
 
 RTSPClient::RequestRecord::RequestRecord(unsigned cseq, responseHandler* handler,
 					 char const* absStartTime, char const* absEndTime, float scale,

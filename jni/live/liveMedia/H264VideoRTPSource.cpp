@@ -65,45 +65,45 @@ H264VideoRTPSource::~H264VideoRTPSource() {
 Boolean H264VideoRTPSource
 ::processSpecialHeader(BufferedPacket* packet,
                        unsigned& resultSpecialHeaderSize) {
-  unsigned char* headerStart = packet->data(); // Õâ¸öRTP°üµÄÊý¾Ý Ìø¹ýÁËRTP¹Ì¶¨°üÍ·
+  unsigned char* headerStart = packet->data(); // è¿™ä¸ªRTPåŒ…çš„æ•°æ® è·³è¿‡äº†RTPå›ºå®šåŒ…å¤´
   unsigned packetSize = packet->dataSize();
   unsigned numBytesToSkip;
 
   // Check the 'nal_unit_type' for special 'aggregation' or 'fragmentation' packets:
   if (packetSize < 1) return False;
 
-  /* ¶ÔÓÚH264 over RTPÀ´Ëµ
-  	RTP°üµÄÊý¾Ý µÚÒ»¸ö×Ö½ÚÊÇNAL type 
-	a.H264¶¨ÒåµÄ 07(sps) 08(pps) 06(sei) 05(idr) 01(41/01)P/slice 
-  	b.RTP¶¨ÒåµÄ 24~31 ¶¼ÊÇH264 NALUÀàÐÍ Î´Ö¸¶¨µÄ
+  /* å¯¹äºŽH264 over RTPæ¥è¯´
+  	RTPåŒ…çš„æ•°æ® ç¬¬ä¸€ä¸ªå­—èŠ‚æ˜¯NAL type 
+	a.H264å®šä¹‰çš„ 07(sps) 08(pps) 06(sei) 05(idr) 01(41/01)P/slice 
+  	b.RTPå®šä¹‰çš„ 24~31 éƒ½æ˜¯H264 NALUç±»åž‹ æœªæŒ‡å®šçš„
    		 
-	1-23  NALµ¥Ôª  µ¥¸ö NAL µ¥Ôª°ü.
-	24	  STAP-A   µ¥Ò»Ê±¼äµÄ×éºÏ°ü
-	25	  STAP-B   µ¥Ò»Ê±¼äµÄ×éºÏ°ü
-	26	  MTAP16   ¶à¸öÊ±¼äµÄ×éºÏ°ü
-	27	  MTAP24   ¶à¸öÊ±¼äµÄ×éºÏ°ü
-	28	  FU-A	   ·ÖÆ¬µÄµ¥Ôª
-	29	  FU-B	   ·ÖÆ¬µÄµ¥Ôª
+	1-23  NALå•å…ƒ  å•ä¸ª NAL å•å…ƒåŒ….
+	24	  STAP-A   å•ä¸€æ—¶é—´çš„ç»„åˆåŒ… (spså’Œppsä¼šå°è£…åœ¨ä¸€èµ·)
+	25	  STAP-B   å•ä¸€æ—¶é—´çš„ç»„åˆåŒ…
+	26	  MTAP16   å¤šä¸ªæ—¶é—´çš„ç»„åˆåŒ…
+	27	  MTAP24   å¤šä¸ªæ—¶é—´çš„ç»„åˆåŒ…
+	28	  FU-A	   åˆ†ç‰‡çš„å•å…ƒ		(H264)
+	29	  FU-B	   åˆ†ç‰‡çš„å•å…ƒ
     
    */
   fCurPacketNALUnitType = (headerStart[0]&0x1F);
   switch (fCurPacketNALUnitType) {
   case 24: { // STAP-A
     numBytesToSkip = 1; // discard the type byte
-    break; // Ìø¹ýRTP°üÊý¾ÝµÄµÚÒ»¸ö×Ö½Ú
+    break; // è·³è¿‡RTPåŒ…æ•°æ®çš„ç¬¬ä¸€ä¸ªå­—èŠ‚
   }
   case 25: case 26: case 27: { // STAP-B, MTAP16, or MTAP24
     numBytesToSkip = 3; // discard the type byte, and the initial DON
     break;
   }
-  case 28: case 29: { //  FU-A or FU-B ·ÖÆ¬µÄµ¥Ôª ±ÈÈçIÖ¡¿ÉÄÜ±»·ÖÆ¬ 28
+  case 28: case 29: { //  FU-A or FU-B åˆ†ç‰‡çš„å•å…ƒ æ¯”å¦‚Iå¸§å¯èƒ½è¢«åˆ†ç‰‡ 28
     // For these NALUs, the first two bytes are the FU indicator and the FU header.
     // If the start bit is set, we reconstruct the original NAL header into byte 1:
     if (packetSize < 2) return False;
     unsigned char startBit = headerStart[1]&0x80;
     unsigned char endBit = headerStart[1]&0x40;
     if (startBit) {
-      fCurrentPacketBeginsFrame = True; // ·ÖÆ¬µ¥Ôª ÌØÊâÍ·²¿ µÚ¶þ¸ö×Ö½Ú 0x80 
+      fCurrentPacketBeginsFrame = True; // åˆ†ç‰‡å•å…ƒ ç‰¹æ®Šå¤´éƒ¨ ç¬¬äºŒä¸ªå­—èŠ‚ 0x80 
 
       headerStart[1] = (headerStart[0]&0xE0)|(headerStart[1]&0x1F);
       numBytesToSkip = 1;
@@ -111,21 +111,21 @@ Boolean H264VideoRTPSource
       // The start bit is not set, so we skip both the FU indicator and header:
       fCurrentPacketBeginsFrame = False;
       numBytesToSkip = 2;
-    }					// ·ÖÆ¬µ¥Ôª ÌØÊâÍ·²¿ µÚ¶þ¸ö×Ö½Ú 0x80 	
-    fCurrentPacketCompletesFrame = (endBit != 0); // ±ê¼Ç½ÓÊÕ°ü ÒÑ¾­Íê±Ï ÊÕµ½Ò»¸öRTP°üµÄMÎ»Îª 1
+    }					// åˆ†ç‰‡å•å…ƒ ç‰¹æ®Šå¤´éƒ¨ ç¬¬äºŒä¸ªå­—èŠ‚ 0x80 	
+    fCurrentPacketCompletesFrame = (endBit != 0); // æ ‡è®°æŽ¥æ”¶åŒ… å·²ç»å®Œæ¯• æ”¶åˆ°ä¸€ä¸ªRTPåŒ…çš„Mä½ä¸º 1
     break;
     /*
-	Èç¹û·ÖÆ¬µÄ»°  »á°ÑNAL²ðÔÚÁ½¸ö×Ö½ÚÖÐ 
-	header[1] = (byte) (header[4] & 0x1F);  Ô­À´NALUµÚÒ»¸ö×Ö½ÚµÄ0x1F
+	å¦‚æžœåˆ†ç‰‡çš„è¯  ä¼šæŠŠNALæ‹†åœ¨ä¸¤ä¸ªå­—èŠ‚ä¸­ 
+	header[1] = (byte) (header[4] & 0x1F);  åŽŸæ¥NALUç¬¬ä¸€ä¸ªå­—èŠ‚çš„0x1F
 	header[1] += 0x80;
-	header[0] = (byte) ((header[4] & 0x60) & 0xFF); Ô­À´NALUµÚÒ»¸ö×Ö½ÚµÄ0x60
+	header[0] = (byte) ((header[4] & 0x60) & 0xFF); åŽŸæ¥NALUç¬¬ä¸€ä¸ªå­—èŠ‚çš„0x60
 	header[0] += 28;
-	¶øÇÒµÚ¶þ¸ö×Ö½Ú0x80 ´ú±í ¿ªÊ¼ 
-	µÚ¶þ¸ö×Ö½Ú0x40 ´ú±í ½áÊø 
+	è€Œä¸”ç¬¬äºŒä¸ªå­—èŠ‚0x80 ä»£è¡¨ å¼€å§‹ 
+	ç¬¬äºŒä¸ªå­—èŠ‚0x40 ä»£è¡¨ ç»“æŸ 
 
     */
   }
-  default: { // Ò»¸öRTP°ü½öÓÉÒ»¸öÍêÕûµÄNALU×é³É
+  default: { // ä¸€ä¸ªRTPåŒ…ä»…ç”±ä¸€ä¸ªå®Œæ•´çš„NALUç»„æˆ
     // This packet contains one complete NAL unit:
     fCurrentPacketBeginsFrame = fCurrentPacketCompletesFrame = True;
     numBytesToSkip = 0;
@@ -133,7 +133,7 @@ Boolean H264VideoRTPSource
   }
   }
 
-  // RTP°üÊý¾Ý²¿·ÖµÄÌØÊâÍ·²¿(¶ÔÓÚH264ÊÇNAL)
+  // RTPåŒ…æ•°æ®éƒ¨åˆ†çš„ç‰¹æ®Šå¤´éƒ¨(å¯¹äºŽH264æ˜¯NAL)
   resultSpecialHeaderSize = numBytesToSkip;
   return True;
 }

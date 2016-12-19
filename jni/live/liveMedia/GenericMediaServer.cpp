@@ -270,7 +270,7 @@ GenericMediaServer::ClientSession
 ::ClientSession(GenericMediaServer& ourServer, u_int32_t sessionId)
   : fOurServer(ourServer), fOurSessionId(sessionId), fOurServerMediaSession(NULL),
     fLivenessCheckTask(NULL) {
-  noteLiveness();
+  noteLiveness(); // 这样可能启动心跳机制
 }
 
 GenericMediaServer::ClientSession::~ClientSession() {

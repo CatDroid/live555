@@ -281,16 +281,16 @@ void RTPReceptionStats
   gettimeofday(&timeNow, NULL);
   if (fLastPacketReceptionTime.tv_sec != 0
       || fLastPacketReceptionTime.tv_usec != 0) {
-    unsigned gap
+    unsigned gap // 计算上一个包到这个包之间接收时间差值
       = (timeNow.tv_sec - fLastPacketReceptionTime.tv_sec)*MILLION
       + timeNow.tv_usec - fLastPacketReceptionTime.tv_usec; 
     if (gap > fMaxInterPacketGapUS) {
-      fMaxInterPacketGapUS = gap;
+      fMaxInterPacketGapUS = gap;// 保留RTP包最大的接收间隔
     }
     if (gap < fMinInterPacketGapUS) {
-      fMinInterPacketGapUS = gap;
+      fMinInterPacketGapUS = gap;// 保留RTP包最小接收间隔
     }
-    fTotalInterPacketGaps.tv_usec += gap;
+    fTotalInterPacketGaps.tv_usec += gap;// 统计RTP接收间隔的累计值
     if (fTotalInterPacketGaps.tv_usec >= MILLION) {
       ++fTotalInterPacketGaps.tv_sec;
       fTotalInterPacketGaps.tv_usec -= MILLION;
@@ -323,21 +323,21 @@ void RTPReceptionStats
     // This is the first timestamp that we've seen, so use the current
     // 'wall clock' time as the synchronization time.  (This will be
     // corrected later when we receive RTCP SRs.)
-    fSyncTimestamp = rtpTimestamp; 	// 接收到一个帧的第一个包的时间
-    fSyncTime = timeNow;		// 接收到帧中第一个包 的时间戳	
+    fSyncTimestamp = rtpTimestamp; 	// 接收到一个帧的第一个包的时间戳
+    fSyncTime = timeNow;		// 接收到帧中第一个包 的 当时系统时间	
   }
 
   int timestampDiff = rtpTimestamp - fSyncTimestamp; // 两个帧之间的时间间隔
       // Note: This works even if the timestamp wraps around
       // (as long as "int" is 32 bits)
 
-  // Divide this by the timestamp frequency to get real time:
+  // Divide this by the timestamp frequency to get real time:  // rtp的时间戳*(1/90000) (H264)   *(1/44100)(AAC)
   double timeDiff = timestampDiff/(double)timestampFrequency; // 除以时钟戳频率得到真实时间 单位秒
 
   // Add this to the 'sync time' to get our result:
   unsigned const million = 1000000;
   unsigned seconds, uSeconds;
-  if (timeDiff >= 0.0) {
+  if (timeDiff >= 0.0) { // timeDiff单位是秒  分整数部分和小数部分
     seconds = fSyncTime.tv_sec + (unsigned)(timeDiff);
     uSeconds = fSyncTime.tv_usec
       + (unsigned)((timeDiff - (unsigned)timeDiff)*million);
@@ -355,30 +355,33 @@ void RTPReceptionStats
       --seconds;
     }
   }
-  resultPresentationTime.tv_sec = seconds;
+  resultPresentationTime.tv_sec = seconds; // 计算出 绝对显示时间
   resultPresentationTime.tv_usec = uSeconds;
-  resultHasBeenSyncedUsingRTCP = fHasBeenSynchronized;
+  resultHasBeenSyncedUsingRTCP = fHasBeenSynchronized; 
 
   // Save these as the new synchronization timestamp & time:
   fSyncTimestamp = rtpTimestamp;
-  fSyncTime = resultPresentationTime;
-
+  fSyncTime = resultPresentationTime;	// 保留上一个帧的绝对显示时间
+										// 可能在RTPReceptionStats::noteIncomingSR被修改
   fPreviousPacketRTPTimestamp = rtpTimestamp;
 }
 
 void RTPReceptionStats::noteIncomingSR(u_int32_t ntpTimestampMSW,
 				       u_int32_t ntpTimestampLSW,
-				       u_int32_t rtpTimestamp) {
+				       u_int32_t rtpTimestamp) { // 收到发送者的RTCP-SR包
   fLastReceivedSR_NTPmsw = ntpTimestampMSW;
   fLastReceivedSR_NTPlsw = ntpTimestampLSW;
 
   gettimeofday(&fLastReceivedSR_time, NULL);
 
   // Use this SR to update time synchronization information:
-  fSyncTimestamp = rtpTimestamp;
+  fSyncTimestamp = rtpTimestamp; // SR包中 NPT时间从1900.1.1开始
   fSyncTime.tv_sec = ntpTimestampMSW - 0x83AA7E80; // 1/1/1900 -> 1/1/1970
   double microseconds = (ntpTimestampLSW*15625.0)/0x04000000; // 10^6/2^32
-  fSyncTime.tv_usec = (unsigned)(microseconds+0.5);
+  fSyncTime.tv_usec = (unsigned)(microseconds+0.5);// 转换成unix时间
+  // 更新:
+  //  最近一个包的时间戳	fSyncTimestamp
+  //  显示的绝对时间		fSyncTime
   fHasBeenSynchronized = True;
 }
 

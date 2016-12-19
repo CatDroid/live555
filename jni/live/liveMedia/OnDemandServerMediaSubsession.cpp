@@ -240,7 +240,14 @@ void OnDemandServerMediaSubsession	// handleCmd_SETUP SETUP阶段 回调
 
 void OnDemandServerMediaSubsession::startStream(unsigned clientSessionId,
 						void* streamToken,
-						TaskFunc* rtcpRRHandler,
+						TaskFunc* rtcpRRHandler, 
+						/*
+						@ RTSPServer.cpp 
+						
+						RTSPServer::RTSPClientSession::handleCmd_PLAY 处理客户端Play命令时候 
+
+						fStreamStates[i].subsession->startStream
+						*/
 						void* rtcpRRHandlerClientData,
 						unsigned short& rtpSeqNum,
 						unsigned& rtpTimestamp,
@@ -524,7 +531,7 @@ static void afterPlayingStreamState(void* clientData) {
   // (This can be done only on streams that have a known duration.)
 }
 
-StreamState::StreamState(OnDemandServerMediaSubsession& master,
+StreamState::StreamState(OnDemandServerMediaSubsession& master,// 每个ServerMediaSubsession对应一个StreamState
                          Port const& serverRTPPort, Port const& serverRTCPPort,
 			 RTPSink* rtpSink, BasicUDPSink* udpSink,
 			 unsigned totalBW, FramedSource* mediaSource,
@@ -548,6 +555,7 @@ void StreamState
   if (dests == NULL) return;
 
   if (fRTCPInstance == NULL && fRTPSink != NULL) {
+  	// 一个RTP对应一个RTCP实例 
     // Create (and start) a 'RTCP instance' for this RTP sink:
     fRTCPInstance = fMaster.createRTCP(fRTCPgs, fTotalBW, (unsigned char*)fMaster.fCNAME, fRTPSink);
         // Note: This starts RTCP running automatically
@@ -566,7 +574,7 @@ void StreamState
 						 serverRequestAlternativeByteHandler, serverRequestAlternativeByteHandlerClientData);
         // So that we continue to handle RTSP commands from the client
     }
-    if (fRTCPInstance != NULL) {	
+    if (fRTCPInstance != NULL) { //TCP 如果使用RTCP的话 这里添加 rtcpRRHandler(maybe GenericMediaServer::ClientSession::noteClientLiveness )	
       fRTCPInstance->addStreamSocket(dests->tcpSocketNum, dests->rtcpChannelId);
       fRTCPInstance->setSpecificRRHandler(dests->tcpSocketNum, dests->rtcpChannelId,
 					  rtcpRRHandler, rtcpRRHandlerClientData);
@@ -578,7 +586,7 @@ void StreamState
     if (fRTCPgs != NULL && !(fRTCPgs == fRTPgs && dests->rtcpPort.num() == dests->rtpPort.num())) {
       fRTCPgs->addDestination(dests->addr, dests->rtcpPort, clientSessionId);
     }
-    if (fRTCPInstance != NULL) {
+    if (fRTCPInstance != NULL) {//UDP  
       fRTCPInstance->setSpecificRRHandler(dests->addr.s_addr, dests->rtcpPort,
 					  rtcpRRHandler, rtcpRRHandlerClientData);
     }

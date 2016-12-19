@@ -211,6 +211,8 @@ RTCPInstance::~RTCPInstance() {
   delete[] fInBuf;
 }
 
+
+// 通知RR包到来  根据地址和端口 在fSpecificRRHandlerTable找到对应回调函数和参数 e.g GenericMediaServer::ClientSession::noteClientLiveness
 void RTCPInstance::noteArrivingRR(struct sockaddr_in const& fromAddressAndPort,
 				  int tcpSocketNum, unsigned char tcpStreamChannelId) {
   // If a 'RR handler' was set, call it now:
@@ -279,6 +281,7 @@ unsigned RTCPInstance::numMembers() const {
   return fKnownMembers->numMembers();
 }
 
+// 分别对应 Bye SR RR APP SDES(源描述报告)等RTCP包的处理
 void RTCPInstance::setByeHandler(TaskFunc* handlerTask, void* clientData,
 				 Boolean handleActiveParticipantsOnly) {
   fByeHandlerTask = handlerTask;
@@ -300,12 +303,14 @@ void RTCPInstance
 ::setSpecificRRHandler(netAddressBits fromAddress, Port fromPort,
 		       TaskFunc* handlerTask, void* clientData) {
   if (handlerTask == NULL && clientData == NULL) {
-    unsetSpecificRRHandler(fromAddress, fromPort);
+    unsetSpecificRRHandler(fromAddress, fromPort); 
     return;
   }
+  // 所有特别回调接口放到 fSpecificRRHandlerTable 
+  // e.g RTMPServer会添加 GenericMediaServer::ClientSession::noteLiveness 用来把RTCP的RR包(接受者报告包) 作为客户端的心跳
 
   RRHandlerRecord* rrHandler = new RRHandlerRecord;
-  rrHandler->rrHandlerTask = handlerTask;
+  rrHandler->rrHandlerTask = handlerTask;  
   rrHandler->rrHandlerClientData = clientData;
   if (fSpecificRRHandlerTable == NULL) {
     fSpecificRRHandlerTable = new AddressPortLookupTable;
@@ -485,6 +490,9 @@ void RTCPInstance::incomingReportHandler1() {
   } while (0);
 }
 
+/*
+处理一个RTCP包
+*/
 void RTCPInstance
 ::processIncomingReport(unsigned packetSize, struct sockaddr_in const& fromAddressAndPort,
 			int tcpSocketNum, unsigned char tcpStreamChannelId) {
@@ -555,14 +563,22 @@ void RTCPInstance
 	  fprintf(stderr, "SR\n");
 #endif
 	  if (length < 20) break; length -= 20;
-
+	  	// 服务器要从转换时间Unix到NTP时间 只要加上2,208,988,800
+	  	//
+		// 64bits 从1900.1.1开始计数 
+		// 1/1/1900(SR包中时间起始是1900) -> 1/1/1970(Unix时间) 减去 0x83AA7E80/ 2,208,988,800
+		//	see: RTPSource.cpp RTPReceptionStats::noteIncomingSR
+		//	
+		// msw: most significant word
+		// lsw: least significant word
+		// 
 	  // Extract the NTP timestamp, and note this:
 	  unsigned NTPmsw = ntohl(*(u_int32_t*)pkt); ADVANCE(4);
 	  unsigned NTPlsw = ntohl(*(u_int32_t*)pkt); ADVANCE(4);
 	  unsigned rtpTimestamp = ntohl(*(u_int32_t*)pkt); ADVANCE(4);
-	  if (fSource != NULL) {
+	  if (fSource != NULL) {// 接收端收到一个RTCP SR包 
 	    RTPReceptionStatsDB& receptionStats
-	      = fSource->receptionStatsDB();
+	      = fSource->receptionStatsDB(); // fSource对于H264 可以是H264VideoRTPSouce
 	    receptionStats.noteIncomingSR(reportSenderSSRC,
 					  NTPmsw, NTPlsw, rtpTimestamp);
 	  }
@@ -573,7 +589,7 @@ void RTCPInstance
 
 	  // The rest of the SR is handled like a RR (so, no "break;" here)
 	}
-        case RTCP_PT_RR: {
+        case RTCP_PT_RR: { // Reciver Report 接收者包
 #ifdef DEBUG
 	  fprintf(stderr, "RR\n");
 #endif
@@ -607,6 +623,7 @@ void RTCPInstance
 
 	  if (pt == RTCP_PT_RR) { // i.e., we didn't fall through from 'SR'
 	    noteArrivingRR(fromAddressAndPort, tcpSocketNum, tcpStreamChannelId);
+		// 回调处理函数(e.g 心跳包更新)
 	  }
 
 	  subPacketOK = True;

@@ -928,10 +928,13 @@ void RTSPServer::RTSPClientConnection::handleRequestBytes(int newBytesRead) {
       // If the request included a "Session:" id, and it refers to a client session that's
       // current ongoing, then use this command to indicate 'liveness' on that client session:
       Boolean const requestIncludedSessionId = sessionIdStr[0] != '\0';
-      if (requestIncludedSessionId) { // 如果请求带有 Session: 字段  找到对应的RTSPClientSession!
+
+	  // 如果请求带有 Session: 字段  找到对应的RTSPClientSession!
+	  // PLAY命令 C:Session: 1262314289005  S:Session: 1262314289005;timeout=60
+      if (requestIncludedSessionId) { 
 	clientSession  
 	  = (RTSPServer::RTSPClientSession*)(fOurRTSPServer.lookupClientSession(sessionIdStr));
-	if (clientSession != NULL) clientSession->noteLiveness(); // 客户端心跳??
+	if (clientSession != NULL) clientSession->noteLiveness(); // 收到一个新的RTSP命令 也可以作为心跳 更新心跳 
       }
     
       // We now have a complete RTSP request.
@@ -941,6 +944,8 @@ void RTSPServer::RTSPClientConnection::handleRequestBytes(int newBytesRead) {
 	// If the "OPTIONS" command included a "Session:" id for a session that doesn't exist,
 	// then treat this as an error:
 	if (requestIncludedSessionId && clientSession == NULL) {
+		// 如果OPTIOINS命令 头部(header in url+header+SDP)带有Session字段
+		// 但是根据sessionID没有找到对应的ClientSession实例  返回错误
 	  handleCmd_sessionNotFound();
 	} else {
 	  // Normal case:
@@ -2025,7 +2030,7 @@ void RTSPServer::RTSPClientSession
       if (fStreamStates[i].subsession == NULL) continue;
       fStreamStates[i].subsession->startStream(fOurSessionId,
 					       fStreamStates[i].streamToken,
-					       (TaskFunc*)noteClientLiveness, this,
+					       (TaskFunc*)noteClientLiveness/*作为rtcpRRHandler*/, this,
 					       rtpSeqNum, rtpTimestamp,
 					       RTSPServer::RTSPClientConnection::handleAlternativeRequestByte, ourClientConnection);
       const char *urlSuffix = fStreamStates[i].subsession->trackId();
