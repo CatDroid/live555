@@ -1018,7 +1018,7 @@ double MediaSubsession::getNormalPlayTime(struct timeval const& presentationTime
 	
     double ptsDouble = (double)(presentationTime.tv_sec + presentationTime.tv_usec/1000000.0);
 
-    if (rtpInfo.infoIsNew) {
+    if (rtpInfo.infoIsNew) { // 除非重新发送和收到PLAY应答 
       // This is the first time we've been called with a synchronized presentation time since the "rtpInfo"
       // structure was last filled in.  Use this "presentationTime" to compute "fNPT_PTS_Offset":
       if (seqNumLT(rtpSource()->curPacketRTPSeqNum(), rtpInfo.seqNum)) return -0.1; // sanity check; ignore old packets
@@ -1028,11 +1028,28 @@ double MediaSubsession::getNormalPlayTime(struct timeval const& presentationTime
       double npt = playStartTime() + nptOffset; // rtp包时间戳 相对开始时候 RTP-Info: rtptime=0
 												// 这个就是没有RTCP同步的返回值  Range: npt=0.000-
 
-	  fNPT_PTS_Offset = npt - ptsDouble*scale();
+	  fNPT_PTS_Offset = npt - ptsDouble*scale();// ??? 这个偏差造成的原因 ???
+
+/*
+
+pts = (rtp_timestamp - fSyncTimeStamp) + fSyncTime
+
+npt = (rtp_timestamp - RTP-INFO:rtptime= ) + Range:npt= 
+
+
+fNPT_PTS_Offset = npt - pts  ???? SR包接收后的第一个RTP包/帧
+
+npt = pts + fNPT_PTS_Offset (下一次就不再使用 RTP-INFO:rtptime= 和 Range:npt=  )
+ 
+
+*/
+	  
       rtpInfo.infoIsNew = False; // for next time
 
       return npt;
     } else {
+
+	  // 使用上一次计算好的 fNPT_PTS_Offset 来从PTS计算NPT时间
       // Use the precomputed "fNPT_PTS_Offset" to compute the NPT from the PTS:
       if (fNPT_PTS_Offset == 0.0) return 0.0; // error: The "rtpInfo" structure was apparently never filled in
       return (double)(ptsDouble*scale() + fNPT_PTS_Offset);
