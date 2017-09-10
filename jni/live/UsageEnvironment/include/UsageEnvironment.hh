@@ -87,7 +87,8 @@ public:
   virtual UsageEnvironment& operator<<(void* p) = 0;
 
   // a pointer to additional, optional, client-specific state
-  void* liveMediaPriv;
+  void* liveMediaPriv;		// 指向 _Tables 
+  							// _Tables中包含了MediaLookupTable实例指针         记录这个UsageEnvironment下 创建的所有Medium对象
   void* groupsockPriv;
 
 protected:

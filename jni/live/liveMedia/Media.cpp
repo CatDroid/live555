@@ -119,6 +119,7 @@ MediaLookupTable* MediaLookupTable::ourMedia(UsageEnvironment& env) {
   if (ourTables->mediaTable == NULL) {
     // Create a new table to record the media that are to be created in
     // this environment:
+    // 创建一个 MediaLookupTable 来记录 这个 UsageEnvironment下 创建的所有 Medium对象
     ourTables->mediaTable = new MediaLookupTable(env);
   }
   return ourTables->mediaTable;
@@ -135,16 +136,16 @@ void MediaLookupTable::addNew(Medium* medium, char* mediumName) {
 void MediaLookupTable::remove(char const* name) {
   Medium* medium = lookup(name);
   if (medium != NULL) {
-    fTable->Remove(name);
+    fTable->Remove(name);// fTable 包含所有创建过的Medium实例
     if (fTable->IsEmpty()) {
       // We can also delete ourselves (to reclaim space):
       _Tables* ourTables = _Tables::getOurTables(fEnv);
-      delete this;
+      delete this; // 在成员函数中析构掉自己
       ourTables->mediaTable = NULL;
       ourTables->reclaimIfPossible();
     }
 
-    delete medium;
+    delete medium;// 析构 Medium对象 e.g ServerMediaSession MutliFramedRtpSource MutliFramedRtpSink
   }
 }
 
