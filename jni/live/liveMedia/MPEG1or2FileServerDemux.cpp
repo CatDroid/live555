@@ -57,7 +57,12 @@ MPEG1or2FileServerDemux::newVideoServerMediaSubsession(Boolean iFramesOnly,
   return MPEG1or2DemuxedServerMediaSubsession::createNew(*this, 0xE0, fReuseFirstSource,
 							 iFramesOnly, vshPeriod);
 }
+/*
+播放 mpg文件 使用  newVideoServerMediaSubsession newAudioServerMediaSubsession
+播放 vob文件 使用  newVideoServerMediaSubsession newAC3AudioServerMediaSubsession
+@ 
 
+*/
 ServerMediaSubsession*
 MPEG1or2FileServerDemux::newAC3AudioServerMediaSubsession() {
   return MPEG1or2DemuxedServerMediaSubsession::createNew(*this, 0xBD, fReuseFirstSource);

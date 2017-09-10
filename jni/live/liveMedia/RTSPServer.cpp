@@ -444,6 +444,11 @@ void RTSPServer::RTSPClientConnection
       strcat(urlTotalSuffix, "/");
     }
     strcat(urlTotalSuffix, urlSuffix);
+
+	/*
+		rtsp://192.168.1.123/test/test/3.gp 
+		test/test/3.gp 作为 streamName 
+	*/
     
     if (!authenticationOK("DESCRIBE", urlTotalSuffix, fullRequestStr)) break;
     
@@ -452,7 +457,7 @@ void RTSPServer::RTSPClientConnection
     
     // Begin by looking up the "ServerMediaSession" object for the specified "urlTotalSuffix":
     session = fOurServer.lookupServerMediaSession(urlTotalSuffix);
-    if (session == NULL) {
+    if (session == NULL) { // 如果HashTable没有的话 应该会创建对应的ServerMediaSession
       handleCmd_notFound();
       break;
     }
@@ -491,9 +496,9 @@ void RTSPServer::RTSPClientConnection
   
   if (session != NULL) {
     // Decrement its reference count, now that we're done using it:
-    session->decrementReferenceCount();
+    session->decrementReferenceCount(); // 删除引用
     if (session->referenceCount() == 0 && session->deleteWhenUnreferenced()) {
-      fOurServer.removeServerMediaSession(session);
+      fOurServer.removeServerMediaSession(session); // 如果已经没有引用的话 从HashTable中移除
     }
   }
 
@@ -885,28 +890,49 @@ void RTSPServer::RTSPClientConnection::handleRequestBytes(int newBytesRead) {
     unsigned contentLength = 0;
     fLastCRLF[2] = '\0'; // temporarily, for parsing
 
-    /* 	cmdName[方法]，urlPreSuffix[url地址]，urlSuffix[要读取的文件名]，sceq[消息的Cseq]
+    /* 	
+    cmdName[方法]，urlPreSuffix[url地址]，urlSuffix[要读取的文件名]，sceq[消息的Cseq]
 	 
  	cmdName: xxx[此处实现了：OPTIONS，DESCRIBE，SETUP，TEARDOWN，PLAY，PAUSE，GET_PARAMETER，SET_PARAMETER]
 
-	假设客户端请求媒体资源的RTSP地址是
-		rtsp://127.0.0.1:8554/test1/test2/test.264
+	parseRTSPRequestString 中 
+    SETUP   rtsp://192.168.1.109/1.mpg/track1  RTSP/1.0  (case 1)
+                                ^     ^      ^
+                                i     k1     k 
+    SETUP   rtsp://192.168.1.109/test/1.mpg/track1  RTSP/1.0    (case 2)                             
+                                ^          ^      ^
+                                i          k1     k 
+    SETUP   rtsp://192.168.1.109/temp.h264  RTSP/1.0  (case 3 )
+                                ^         ^
+                                i/ k1         k 
 
-	urlPreSuffix ip:port之后（不含紧跟的“/”）到最后一个“/”之前的部分
-		即test1/test2
+    The URL suffix comes from [k1+1,k]   ---> 不会是空  可以是 temp.h264(case 3) 或者 test/1.mpg 或者 1.mpg
+    The URL 'pre-suffix' comes from [i+1,k1-1]  --> urlPreSuffix 有可能是空  (case 3 )
 
-	urlSuffix   最后一个“/”之后（不含紧跟的“/”）的内容
-		即test.264
-	
+    一般情况下 urlPreSuffix 应该是 session (stream) name urlSuffix是 subsession (track) name
+    但是也可以处理 文件只有一个track的情况 ，也就是没有track name 
+    在这种情况下 我们这样处理：
+    urlPreSuffix 是空的  那么  urlSuffix 就是 session (stream) name
+    或者 urlPreSuffix 不是空的话 urlPreSuffix + urlSuffix 是  session (stream) name
 
-     	PLAY，PAUSE，GET_PARAMETER，SET_PARAMETER调用handleCmd_withinSession (cmdName,urlPreSuffix, urlSuffix,cseq,(char const*)fRequestBuffer);
+
+	DESCRIBE:
+		RTSP服务器收到客户端的DESCRIBE请求后，
+		根据请求total 
+		通过fOurServer.lookupServerMediaSession创建临时的ServerMediaSession实例
+
+	SETUP:
+		如果ClientConnect在收到SETUP请求没有session id的话 就会创建 ClientSession
+		(创建没有使用的随机数，作为SessionID，并且把SessionID和ClientSession对象放到HashTable fClientSessions  中)
+		代表 这个链接 ClientConnect多了一个Session (链接上多了一个会话)
+		  
+		如果 SETUP请求提供了session id，就会从HashTable fClientSessions查找
+		但没有找到的话  返回 Session Not        Found 错误 
+
+	PLAY，PAUSE，GET_PARAMETER，SET_PARAMETER:
+		必须提供session id 找到对应的RtspClientSession 否则 Session Not        Found 错误 
+		调用handleCmd_withinSession (cmdName,urlPreSuffix, urlSuffix,cseq,(char const*)fRequestBuffer);
     
-      	DESCRIBE则进入handleCmd_DESCRIBE函数。RTSP服务器收到客户端的DESCRIBE请求后，
-
-      	根据请求URL(rtsp://192.168.1.109/1.mpg) 找到RTSp服务(fOurServer.lookupServerMediaSession)对应的 
-      	ServerMediaSession实例
-
-	
 
     */
     Boolean parseSucceeded = parseRTSPRequestString((char*)fRequestBuffer, fLastCRLF+2 - fRequestBuffer,
@@ -1442,7 +1468,7 @@ static void parseTransportHeader(char const* buf,
   portNumBits p1, p2;
   unsigned ttl, rtpCid, rtcpCid;
   
-  // First, find "Transport:"
+  // First, find "Transport:" 找到 Transport:字段
   while (1) {
     if (*buf == '\0') return; // not found
     if (*buf == '\r' && *(buf+1) == '\n' && *(buf+2) == '\r') return; // end of the headers => not found
@@ -1477,6 +1503,9 @@ static void parseTransportHeader(char const* buf,
       rtpChannelId = (unsigned char)rtpCid;
       rtcpChannelId = (unsigned char)rtcpCid;
     }
+	// 如果是 RTP over TCP的话 客户端SETUP请求时 Transport: 字段 应该有 interleaved= 字段
+    // Transport: RTP/AVP/TCP;unicast;interleaved=0-1 
+    // 这里解析到客户端请求时带有的interleaved 作为tcp/rtcp的channel id
     
     fields += strlen(field);
     while (*fields == ';' || *fields == ' ' || *fields == '\t') ++fields; // skip over separating ';' chars or whitespace
@@ -1509,11 +1538,21 @@ void RTSPServer::RTSPClientSession
   char const* streamName = urlPreSuffix; // in the normal case
   char const* trackId = urlSuffix; // in the normal case
   char* concatenatedStreamName = NULL; // in the normal case
-  
+
+  // rtsp://192.168.1.123:8086/test.h264						
+  //			=> urlPreSuffix="" urlSuffix= "test.h264"  streamName= urlSuffix
+  //
+  // rtsp://192.168.1.123:8086/my_streamer/test/test.3gp/track1
+  //			=> urlPreSuffix=my_streamer/test/test.3gp urlSuffix=track1 streamName = urlPreSuffix
+  //
+  //			如果 urlPreSuffix 作为streamName在lookupServerMediaSession返回null的话
+  //			再尝试把 urlPreSuffix+urlSuffix 作为streamName 
+  //
   do {
     // First, make sure the specified stream name exists:
     ServerMediaSession* sms
       = fOurServer.lookupServerMediaSession(streamName, fOurServerMediaSession == NULL);
+	// fOurServerMediaSession == NULL 当前ClientSession是否已经创建过 ServerMediaSession
     if (sms == NULL) {
       // Check for the special case (noted above), before we give up:
       if (urlPreSuffix[0] == '\0') {
@@ -1540,7 +1579,7 @@ void RTSPServer::RTSPClientSession
     } else {
       if (fOurServerMediaSession == NULL) {
 	// We're accessing the "ServerMediaSession" for the first time.
-	fOurServerMediaSession = sms;
+	fOurServerMediaSession = sms; // 记录当前ClientSessioin上对应的ServerMediaSession
 	fOurServerMediaSession->incrementReferenceCount();
       } else if (sms != fOurServerMediaSession) {
 	// The client asked for a stream that's different from the one originally requested for this stream id.  Bad request:
@@ -1549,9 +1588,11 @@ void RTSPServer::RTSPClientSession
       }
     }
 
+	// lookupServerMediaSession 创建的 ServerMediaSession 时候 必须已经把所有track作为subsesssion
+	// add到ServerMediaSession中
     if (fStreamStates == NULL) {
       // This is the first "SETUP" for this session.  Set up our array of states for all of this session's subsessions (tracks):
-      fNumStreamStates = fOurServerMediaSession->numSubsessions();
+      fNumStreamStates = fOurServerMediaSession->numSubsessions();// 获得ServerMediaSession有多少个track
       fStreamStates = new struct streamState[fNumStreamStates];
  
       ServerMediaSubsessionIterator iter(*fOurServerMediaSession);
@@ -1560,8 +1601,9 @@ void RTSPServer::RTSPClientSession
 	subsession = iter.next(); // ???  1 RTSPClientSession ~ N streamState ~ N ServerMediaSubSessions ~ N ServerMediaSubSessions::StreamState
 	fStreamStates[i].subsession = subsession;
 	fStreamStates[i].tcpSocketNum = -1; // for now; may get set for RTP-over-TCP streaming
+	// 对于TCP over RTP tcpSocketNum是客户端与服务端RTSP连接的套接字(accept)
 	fStreamStates[i].streamToken = NULL; // for now; it may be changed by the "getStreamParameters()" call that comes later
-      }
+      }// ClientSession用N个streamState记录每个track/subsession的信息
     }
     
     // Look up information for the specified subsession (track):
@@ -1572,6 +1614,9 @@ void RTSPServer::RTSPClientSession
 	subsession = fStreamStates[trackNum].subsession;
 	if (subsession != NULL && strcmp(trackId, subsession->trackId()) == 0) break;
       }
+	  // 命令行 SETUP   rtsp://192.168.1.109/1.mpg/track1  RTSP/1.0 
+	  // 这里要找到 对应 trackId("track1" 或者 "track=1" 字符串比较 )的 streamState
+	  // 从而找到敌营trackId的 subsession
       if (trackNum >= fNumStreamStates) {
 	// The specified track id doesn't exist, so this request fails:
 	ourClientConnection->handleCmd_notFound();
@@ -1588,6 +1633,7 @@ void RTSPServer::RTSPClientSession
       subsession = fStreamStates[trackNum].subsession;
     }
     // ASSERT: subsession != NULL
+    // 下面开始处理subsession和回复
     
     void*& token = fStreamStates[trackNum].streamToken; // alias
     if (token != NULL) {
@@ -1607,9 +1653,11 @@ void RTSPServer::RTSPClientSession
     unsigned char rtpChannelId, rtcpChannelId;
     parseTransportHeader(fullRequestStr, streamingMode, streamingModeString,
 			 clientsDestinationAddressStr, clientsDestinationTTL,
-			 clientRTPPortNum, clientRTCPPortNum,
-			 rtpChannelId, rtcpChannelId); // interleaved=0-1 rtpChannelId-rtcpChannelId
-    if ((streamingMode == RTP_TCP && rtpChannelId == 0xFF) ||
+			 clientRTPPortNum, clientRTCPPortNum,// RTP over UDP client_port=9000-9001 or client_port=9000(+1作为rtcp的端口)
+			 									 // UDP client_port=9000 
+			 rtpChannelId, rtcpChannelId // RTP over TCP interleaved=0-1 rtpChannelId-rtcpChannelId
+			 ); 
+    if ((streamingMode == RTP_TCP && rtpChannelId == 0xFF) || // 如果是Rtp Over TCP 但是SETUP请求没有提供interleaved字段
 	(streamingMode != RTP_TCP && ourClientConnection->fClientOutputSocket != ourClientConnection->fClientInputSocket)) {
       // An anomolous situation, caused by a buggy client.  Either:
       //     1/ TCP streaming was requested, but with no "interleaving=" fields.  (QuickTime Player sometimes does this.), or
@@ -1619,8 +1667,10 @@ void RTSPServer::RTSPClientSession
       rtpChannelId = fTCPStreamIdCount; rtcpChannelId = fTCPStreamIdCount+1;
     }
     if (streamingMode == RTP_TCP) fTCPStreamIdCount += 2;
+	// 调整 channel id 以备下一个 subsession/track 使用
+	// fTCPStreamIdCount 是  RTSPClientSession 的成员/状态
     
-    Port clientRTPPort(clientRTPPortNum);
+    Port clientRTPPort(clientRTPPortNum);// Port 只是封装了一下 端口号PortNum: portNumBits  
     Port clientRTCPPort(clientRTCPPortNum);
     
     // Next, check whether a "Range:" or "x-playNow:" header is present in the request.
@@ -1638,7 +1688,9 @@ void RTSPServer::RTSPClientSession
     }
     
     // Then, get server parameters from the 'subsession':
-    if (streamingMode == RTP_TCP) { // 也就是RTP over TCP同时也用RTSP over TCP
+    if (streamingMode == RTP_TCP) { 
+		// 也就是RTP over TCP同时也用RTSP over TCP
+		// 使用 RTSP TCP 的 socket   tcpSocketNum代表客户端在服务端accpet返回的套接字
       // Note that we'll be streaming over the RTSP TCP connection:
       fStreamStates[trackNum].tcpSocketNum = ourClientConnection->fClientOutputSocket;
       fOurRTSPServer.noteTCPStreamingOnSocket(fStreamStates[trackNum].tcpSocketNum, this, trackNum);
@@ -1671,17 +1723,55 @@ void RTSPServer::RTSPClientSession
 #endif
 
 
-    //	在这里会 回调OnDemandServerMediaSubsession::createNewRTPSink/createNewStreamSource
+    //	在这里会 
+    //	回调
+    //		ServerMediaSubsession::getStreamParameters =0 抽象函数
+    //	实际很多情况下 派生自 OnDemandServerMediaSubsession
+    //		OnDemandServerMediaSubsession::getStreamParameters 实现了该函数
+    //			--> OnDemandServerMediaSubsession::createNewRTPSink = 0 	 派生类需要实现
+    //			--> OnDemandServerMediaSubsession::createNewStreamSource = 0 派生类需要实现
+    //	 
     //		 以及创建RTP连接和RTCP连接
     subsession->getStreamParameters(fOurSessionId, ourClientConnection->fClientAddr.sin_addr.s_addr,
-				    clientRTPPort, clientRTCPPort,
-				    fStreamStates[trackNum].tcpSocketNum, rtpChannelId, rtcpChannelId,
-				    destinationAddress, destinationTTL, fIsMulticast,
-				    serverRTPPort, serverRTCPPort,
-				    fStreamStates[trackNum].streamToken); // ServerMediaSubsession::StreamState
+				    clientRTPPort, 
+				    clientRTCPPort,
+				    fStreamStates[trackNum].tcpSocketNum, //如果 RTP over TCP , RTSP TCP accept返回的套接字 ; 其他 -1 
+				    rtpChannelId, rtcpChannelId, // in RTP over TCP interleave=0-1 or 2-3
+				    destinationAddress, destinationTTL/*in out */, 
+				    fIsMulticast, 	// out 
+				    serverRTPPort,  // out  RTP over UDP 
+				    serverRTCPPort, // out  RTP over UDP  
+				    fStreamStates[trackNum].streamToken /*out 就是ServerMediaSubsession::StreamState */
+				    );  
+	/*
+		
+		ClientSession::fStreamStates[trackNum].streamToken
+		这个十分重要
+		连接ClientConnection的一个会话ClientSession 根据StreamName关联了一个ServerMediaSession(fOurServerMediaSession)及其下SubSession
+		而 fStreamStates.streamToken ! 是 代表 客户端对这个流(StreamName,ServeMediaSession)/track(ServerMediaSubSession)的状态和控制
+		(若OnDemandServerMediaSubsession::reuseFirstSource=true的话 所有客户端共享这个streamToken 这时不能seek pause)
+
+		后面每次调用SubSession的函数Play Seek Pause Scale等 都要带上 fStreamStates[i].streamToken 
+
+
+		e.g 
+		如下图
+		两个Client SETUP 同一个streamName(temp/1.mp3) 各自有自己的streamToken
+
+		(fStreamStates.streamToken)
+		ClientSession 	--------------> ServerMediaSession ( streamName = temp/1.mp3 )
+							  /				|           |
+							 /			SubSession	   SubSession ( reuseFirstSource = false )
+							/							
+		ClientSession    ---
+		(fStreamStates.streamToken)
+	*/
+	
     SendingInterfaceAddr = origSendingInterfaceAddr;
     ReceivingInterfaceAddr = origReceivingInterfaceAddr;
-    
+
+
+	// 下面是整理回复信息 内存保存在ClientConnect.fResponseBuffer (默认20kB大小的回复Buffer)
     AddressString destAddrStr(destinationAddress);
     AddressString sourceAddrStr(sourceAddr);
     char timeoutParameterString[100];
@@ -1735,11 +1825,13 @@ void RTSPServer::RTSPClientSession
 		     "Session: %08X%s\r\n\r\n",
 		     ourClientConnection->fCurrentCSeq,
 		     dateHeader(),
-		     destAddrStr.val(), sourceAddrStr.val(), ntohs(clientRTPPort.num()), ntohs(clientRTCPPort.num()), ntohs(serverRTPPort.num()), ntohs(serverRTCPPort.num()),
+		     destAddrStr.val(), sourceAddrStr.val(), 
+		     ntohs(clientRTPPort.num()), ntohs(clientRTCPPort.num()), 
+		     ntohs(serverRTPPort.num()), ntohs(serverRTCPPort.num()), // RTP over RTP 返回服务端的RTP和RTCP的UDP端口
 		     fOurSessionId, timeoutParameterString);
 	    break;
 	  }
-          case RTP_TCP: {
+          case RTP_TCP: { // 如果是RTP over TCP serverRTPPort和serverRTCPPort没有作用
 	    if (!fOurRTSPServer.fAllowStreamingRTPOverTCP) {
 	      ourClientConnection->handleCmd_unsupportedTransport();
 	    } else {
@@ -1753,6 +1845,8 @@ void RTSPServer::RTSPClientSession
 		       dateHeader(),
 		       destAddrStr.val(), sourceAddrStr.val(), rtpChannelId, rtcpChannelId,
 		       fOurSessionId, timeoutParameterString);
+		  	// 注意有 interleaved=0-1    或者 interleaved=2-3   代表 rtpChannelId-rtcpChannelId
+		  	// 在rtp over tcp的时候 rtp头之前 有4个字节 $ + chanel + sizeH + sizeL 
 	    }
 	    break;
 	  }
@@ -1790,7 +1884,8 @@ void RTSPServer::RTSPClientSession
   //   or "urlPreSuffix" and "urlSuffix" are both nonempty, but when concatenated, (with "/") form the session (stream) name.
   // Begin by figuring out which of these it is:
   ServerMediaSubsession* subsession;
-  
+
+  // Step 1 找出 subsession 如果不是集合操作(Aggregated operation)的话
   if (fOurServerMediaSession == NULL) { // There wasn't a previous SETUP!
     ourClientConnection->handleCmd_notSupported();
     return;
@@ -1824,10 +1919,14 @@ void RTSPServer::RTSPClientSession
     ourClientConnection->handleCmd_notFound();
     return;
   }
-  
+
+  // Step 2. 命令 dispatch 
   if (strcmp(cmdName, "TEARDOWN") == 0) {
     handleCmd_TEARDOWN(ourClientConnection, subsession);
   } else if (strcmp(cmdName, "PLAY") == 0) {
+  	// PLAY rtsp:://192.168.1.123:8086/mystreamName/3.gp RTSP1.0
+  	// mystream/3.gp作为stream name的情况下 
+  	// 这里 subsession 是 NULL 代表‘集合操作’
     handleCmd_PLAY(ourClientConnection, subsession, fullRequestStr);
   } else if (strcmp(cmdName, "PAUSE") == 0) {
     handleCmd_PAUSE(ourClientConnection, subsession);
@@ -1879,6 +1978,8 @@ void RTSPServer::RTSPClientSession
   // Parse the client's "Scale:" header, if any:
   float scale;
   Boolean sawScaleHeader = parseScaleHeader(fullRequestStr, scale);
+
+  // subsession == NULL 代表集合操作/aggregate op 即 全部track一起操作
   
   // Try to set the stream's scale factor to this value:
   if (subsession == NULL /*aggregate op*/) {
@@ -1948,14 +2049,22 @@ void RTSPServer::RTSPClientSession
   for (i = 0; i < fNumStreamStates; ++i) {
     if (subsession == NULL /* means: aggregated operation */ || fNumStreamStates == 1) {
       if (fStreamStates[i].subsession != NULL) {
+
+	  // 每次调用SubSession的函数Play Seek Pause Scale等 都要带上 fStreamStates[i].streamToken 
 	if (sawScaleHeader) {
 	  fStreamStates[i].subsession->setStreamScale(fOurSessionId, fStreamStates[i].streamToken, scale);
 	}
 	if (absStart != NULL) {
 	  // Special case handling for seeking by 'absolute' time:
-	
+
+	  // 当服务端收到play range:npt 12.00=  这样时 执行seek功能
+	  // 遍历当前session下面所有subsession(OnDemandServerMediaSubsession) seekStream 
+	  // 最后调用subsession派生类的seekStreamSource函数
 	  fStreamStates[i].subsession->seekStream(fOurSessionId, fStreamStates[i].streamToken, absStart, absEnd);
 	} else {
+
+	  // 通过NPT方式seek 相对时间
+	
 	  // Seeking by relative (NPT) time:
 	  
 	  u_int64_t numBytes;

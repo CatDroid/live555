@@ -25,8 +25,8 @@ along with this library; if not, write to the Free Software Foundation, Inc.,
 OnDemandServerMediaSubsession
 ::OnDemandServerMediaSubsession(UsageEnvironment& env,
 				Boolean reuseFirstSource,
-				portNumBits initialPortNum,
-				Boolean multiplexRTCPWithRTP)
+				portNumBits initialPortNum, // 派生类可以指定 最初的rtp端口 默认6970
+				Boolean multiplexRTCPWithRTP)// rtp和rtcp复用一个端口 				默认false
   : ServerMediaSubsession(env),
     fSDPLines(NULL), fReuseFirstSource(reuseFirstSource),
     fMultiplexRTCPWithRTP(multiplexRTCPWithRTP), fLastStreamToken(NULL),
@@ -36,7 +36,7 @@ OnDemandServerMediaSubsession
     fInitialPortNum = initialPortNum;
   } else {
     // Make sure RTP ports are even-numbered:
-    fInitialPortNum = (initialPortNum+1)&~1;
+    fInitialPortNum = (initialPortNum+1)&~1; // 初始化端口 必须是偶数 
   }
   gethostname(fCNAME, sizeof fCNAME);
   fCNAME[sizeof fCNAME-1] = '\0'; // just in case
@@ -79,8 +79,8 @@ OnDemandServerMediaSubsession::sdpLines() {
 
     setSDPLinesFromRTPSink(dummyRTPSink, inputSource, estBitrate); // SDP信息 会回调RTPSink和FramedSource的多个函数获取SDP信息
     
-    Medium::close(dummyRTPSink);
-    delete dummyGroupsock; 		// 删除临时创建的 FramedSource
+    Medium::close(dummyRTPSink);	// 删除临时创建的 FramedSource
+    delete dummyGroupsock; 			
     closeStreamSource(inputSource);	// 删除临时创建的 RTPSink
   }
 
@@ -111,12 +111,20 @@ void OnDemandServerMediaSubsession	// handleCmd_SETUP SETUP阶段 回调
     serverRTPPort = ((StreamState*)fLastStreamToken)->serverRTPPort();
     serverRTCPPort = ((StreamState*)fLastStreamToken)->serverRTCPPort();
     ++((StreamState*)fLastStreamToken)->referenceCount();
-    streamToken = fLastStreamToken;
+    streamToken = fLastStreamToken; 
+	// fReuseFirstSource = true 
+	// 如果有新的客户端 发送另外一个连接/会话 对同一个streamName进行播放 (rtsp://192.168.1.123:8086/mystream/3.gp )
+	// SETUP rtsp://192.168.1.123:8086/mystream/3.gp/track0
+	// SETUP rtsp://192.168.1.123:8086/mystream/3.gp/track1
+	// PLAY rtsp://192.168.1.123:8086/mystream/3.gp 
+	// streamName = mystream/3.gp --> 根据这个streamName 可以在 RtspServer::HashTable* fServerMediaSessions 查找到之前创建的 ServerMediaSession(假设之前已有客户端链接并对同样的streamName构建的ServerMediaSession)
+	// 然后 ServerMediaSession 中的SubSession之前已经 回调 createNewStreamSource和createNewRTPSink
+	// 这里重复使用 这个 Source和Sink 也就是回复客户端 同个UDP和RTCP端口
   } else {
     // Normal case: Create a new media source:
     unsigned streamBitrate;
     FramedSource* mediaSource	// 虚函数 创建FramedSource实例
-      = createNewStreamSource(clientSessionId, streamBitrate);
+      = createNewStreamSource(clientSessionId, streamBitrate);// streamBitrate 用来计算发送socket buffer的大小
 
     // Create 'groupsock' and 'sink' objects for the destination,
     // using previously unused server port numbers:
@@ -125,79 +133,90 @@ void OnDemandServerMediaSubsession	// handleCmd_SETUP SETUP阶段 回调
     Groupsock* rtpGroupsock = NULL;
     Groupsock* rtcpGroupsock = NULL;
 
+	// 参数tcpSocketNum   是  in (-1 means use UDP, not TCP)
     if (clientRTPPort.num() != 0 || tcpSocketNum >= 0) { // Normal case: Create destinations
-      portNumBits serverPortNum;
-      if (clientRTCPPort.num() == 0) { // 使用 raw UDP (not RTP) 如果是RTP/AVC/TCP 那么RTCP port=1
-	// We're streaming raw UDP (not RTP). Create a single groupsock:
-	NoReuse dummy(envir()); // ensures that we skip over ports that are already in use
-	for (serverPortNum = fInitialPortNum; ; ++serverPortNum) {
-	  struct in_addr dummyAddr; dummyAddr.s_addr = 0;
+		portNumBits serverPortNum;
+		// RtspServer::parseTransportHeader 
+		// tcpSocketNum >= 0  ---->  RTP over TCP
+		// clientRTPPort.num() != 0 --> UDP or RTP over UDP 
+		// clientRTCPPort.num() == 0 --> UDP (RTP over TCP是 1， RTP over UDP是具体的端口号)	
+      	if (clientRTCPPort.num() == 0) { 	 
+		// ---- 使用 raw UDP (不是RTP)   	
+		// We're streaming raw UDP (not RTP). Create a single groupsock:
+			NoReuse dummy(envir()); // ensures that we skip over ports that are already in use
+			for (serverPortNum = fInitialPortNum; ; ++serverPortNum) {
+				  struct in_addr dummyAddr; dummyAddr.s_addr = 0;
 
-	  /*
-	  	portNumBits initialPortNum = 6970, 
-	  	Boolean multiplexRTCPWithRTP = False);
-	  */
-	  serverRTPPort = serverPortNum;
-	  rtpGroupsock = createGroupsock(dummyAddr, serverRTPPort);
-	  if (rtpGroupsock->socketNum() >= 0) break; // success
-	}
+				  /*
+				  	portNumBits initialPortNum = 6970, 
+				  	Boolean multiplexRTCPWithRTP = False);
+				  */
+				  serverRTPPort = serverPortNum; 
+					// Port = portNumBits
+				  	// 隐式构造 Port(portNumBits)
+				  	// 默认赋值函数 Port = Port(portNumBits)
+				  rtpGroupsock = createGroupsock(dummyAddr, serverRTPPort);
+				  if (rtpGroupsock->socketNum() >= 0) break; // success
+			}// 创建UDPSink 而不是RTPSink
+			udpSink = BasicUDPSink::createNew(envir(), rtpGroupsock);
+      } else { 								
+	  // ---- 使用 RTP over UDP or TCP
+      // Normal case: We're streaming RTP (over UDP or TCP).  Create a pair of
+      // groupsocks (RTP and RTCP), with adjacent port numbers (RTP port number even).
+      // (If we're multiplexing RTCP and RTP over the same port number, it can be odd or even.)
+			NoReuse dummy(envir()); // ensures that we skip over ports that are already in use
+			for (portNumBits serverPortNum = fInitialPortNum; ; ++serverPortNum) {
+				// 每次从 初始端口 开始检查 
+		  		struct in_addr dummyAddr; dummyAddr.s_addr = 0;
 
-	udpSink = BasicUDPSink::createNew(envir(), rtpGroupsock);
-      } else { // 使用 RTP over UDP or TCP
-	// Normal case: We're streaming RTP (over UDP or TCP).  Create a pair of
-	// groupsocks (RTP and RTCP), with adjacent port numbers (RTP port number even).
-	// (If we're multiplexing RTCP and RTP over the same port number, it can be odd or even.)
-	NoReuse dummy(envir()); // ensures that we skip over ports that are already in use
-	for (portNumBits serverPortNum = fInitialPortNum; ; ++serverPortNum) {
-	  struct in_addr dummyAddr; dummyAddr.s_addr = 0;
+				serverRTPPort = serverPortNum;
+				rtpGroupsock = createGroupsock(dummyAddr, serverRTPPort);
+				if (rtpGroupsock->socketNum() < 0) { // 判断端口是否创建成功
+					delete rtpGroupsock;
+					continue; // try again
+				}
 
-	  serverRTPPort = serverPortNum;
-	  rtpGroupsock = createGroupsock(dummyAddr, serverRTPPort);
-	  if (rtpGroupsock->socketNum() < 0) {
-	    delete rtpGroupsock;
-	    continue; // try again
+				if (fMultiplexRTCPWithRTP) {
+					// Use the RTP 'groupsock' object for RTCP as well:
+					serverRTCPPort = serverRTPPort;
+					rtcpGroupsock = rtpGroupsock;
+				} else {
+					// Create a separate 'groupsock' object (with the next (odd) port number) for RTCP:
+					serverRTCPPort = ++serverPortNum;// rtp和rtcp的port必须是连续的 否则两者都要重建
+					rtcpGroupsock = createGroupsock(dummyAddr, serverRTCPPort);
+					if (rtcpGroupsock->socketNum() < 0) {
+						delete rtpGroupsock;
+						delete rtcpGroupsock;
+						continue; // try again
+					}
+		  		}
+		  		break; // success
+			}// 这里已经创建好 rtpGroupsock 和 rtcpGroupsock
+
+			unsigned char rtpPayloadType = 96 + trackNumber()-1; // if dynamic
+			//	虚函数 createNewRTPSink  返回 RTPSink实例 
+			rtpSink = createNewRTPSink(rtpGroupsock, rtpPayloadType, mediaSource);
+			if (rtpSink != NULL && rtpSink->estimatedBitrate() > 0) streamBitrate = rtpSink->estimatedBitrate();
 	  }
 
-	  if (fMultiplexRTCPWithRTP) {
-	    // Use the RTP 'groupsock' object for RTCP as well:
-	    serverRTCPPort = serverRTPPort;
-	    rtcpGroupsock = rtpGroupsock;
-	  } else {
-	    // Create a separate 'groupsock' object (with the next (odd) port number) for RTCP:
-	    serverRTCPPort = ++serverPortNum;
-	    rtcpGroupsock = createGroupsock(dummyAddr, serverRTCPPort);
-	    if (rtcpGroupsock->socketNum() < 0) {
-	      delete rtpGroupsock;
-	      delete rtcpGroupsock;
-	      continue; // try again
-	    }
-	  }
+	  // Turn off the destinations for each groupsock.  They'll get set later
+	  // (unless TCP is used instead):
+	  if (rtpGroupsock != NULL) rtpGroupsock->removeAllDestinations();
+	  if (rtcpGroupsock != NULL) rtcpGroupsock->removeAllDestinations();
 
-	  break; // success
-	  
-	}// 这里已经创建好 rtpGroupsock 和 rtcpGroupsock
+	  if (rtpGroupsock != NULL) {
+	  	 // 根据createNewStreamSource 数据源返回的bitrate来估计 RTP socket发送缓存区大小
+	      // Try to use a big send buffer for RTP -  at least 0.1 second of
+	      // specified bandwidth and at least 50 KB
+	      unsigned rtpBufSize = streamBitrate * 25 / 2; // 1 kbps * 0.1 s = 12.5 bytes
+	      // 根据 createNewStreamSource 提供的比特率(bit)          计算  0.1s需要的buffer大小(字节)
+	      // bitrate * 1000 *  0.1s / 8bit 
+	      if (rtpBufSize < 50 * 1024) rtpBufSize = 50 * 1024;
 
-	unsigned char rtpPayloadType = 96 + trackNumber()-1; // if dynamic
-	//	虚函数 createNewRTPSink  返回 RTPSink实例 
-	rtpSink = createNewRTPSink(rtpGroupsock, rtpPayloadType, mediaSource);
-	if (rtpSink != NULL && rtpSink->estimatedBitrate() > 0) streamBitrate = rtpSink->estimatedBitrate();
-      }
-
-      // Turn off the destinations for each groupsock.  They'll get set later
-      // (unless TCP is used instead):
-      if (rtpGroupsock != NULL) rtpGroupsock->removeAllDestinations();
-      if (rtcpGroupsock != NULL) rtcpGroupsock->removeAllDestinations();
-
-      if (rtpGroupsock != NULL) {
-	// Try to use a big send buffer for RTP -  at least 0.1 second of
-	// specified bandwidth and at least 50 KB
-	unsigned rtpBufSize = streamBitrate * 25 / 2; // 1 kbps * 0.1 s = 12.5 bytes
-	if (rtpBufSize < 50 * 1024) rtpBufSize = 50 * 1024;
-
-	// 控制服务器 RTP socket的buffer大小
-	increaseSendBufferTo(envir(), rtpGroupsock->socketNum(), rtpBufSize);
-      }
-    }
+		  // 控制服务器 RTP socket的buffer大小
+	      increaseSendBufferTo(envir(), rtpGroupsock->socketNum(), rtpBufSize);
+		}
+   }
 
     // Set up the state of the stream.  The stream will get started later:
     streamToken = fLastStreamToken
@@ -206,36 +225,63 @@ void OnDemandServerMediaSubsession	// handleCmd_SETUP SETUP阶段 回调
 			rtpGroupsock, rtcpGroupsock);
     
     /* 
-	创建这个客户端对这个ServerMediaSubsession的状态StreamState
+   		当streamName一样的时候 就会用原来的ServerMediaSession 
+		ServerMediaSession和ServerMediaSubSession都可能被多个Client使用
+
+		但是会根据 创建ServerMediaSubSession时，是否 fReuseFirstSource，
+ 		fReuseFirstSource = true ，对多个Client使用同一个RtpSInk FrameSource(同一个rtp rtcp端口)
+ 		fReuseFirstSource = false，虽然是同一个 ServerMediaSession和 ServerMediaSubSession 
+ 								但是每个Client使用不同的RtpSInk和FrameSource(不同的rtp和rtcp端口) ，
+ 								并通过StreamState( 保存对应的RtpSink FrameSouce 
+ 													rtp/rtcp端口 interleave/channel 
+ 													和共同的ServerMediaSubsession对象) 返回 
+
+		StreamState 就相当于 客户端ClientSession对同个流(StreamName StreamSession)的单独状态和控制
+		
+		因为存在 ServerMediaSession和ServerMediaSubSession 可以共享 
+		所以也不用每次DESCIRBE命令都创建新的 ServerMediaSession 再回复SDP-line
 	
-    	StreamState类 服务器端用来保存对某个ServerMediaSubsession的流化的状态
-     				包括serverRTPPort、serverRTCPPort、rtpSink、mediaSource等
+    	StreamState类 
+    		服务器端用来保存对某个ServerMediaSubsession的流化的状态 包括:
+    		serverRTPPort		Port	
+    		serverRTCPPort		Port 
+    		rtpSink 			RTPSink
+    		mediaSource 		FramedSource
+    		this				ServerMediaSubsession 
 
-    	在创建一个ServerMediaSubsession对象时（详情见testOnDemandRTSPServer.cpp的main函数）
+    	在创建一个ServerMediaSubsession对象时, 会传入reuseFirstSource这个参数
+    		参考 testOnDemandRTSPServer.cpp的main函数
 
-    	会传入reuseFirstSource这个参数
+    		
+    		reuseFirstSource为true  
+    			请求该ServerMediaSubsession的所有客户端都使用同一个StreamState对象
+    			即服务器端使用同一个RTP端口、RTCP端口、RTPSink、FramedSource来为请求该ServerMediaSubsession的多个客户端服务
+    			（一对多，节省服务器端资源）
 
-    	reuseFirstSource为true  请求该ServerMediaSubsession的所有客户端都使用同一个StreamState对象
-    	即服务器端使用同一个RTP端口、RTCP端口、RTPSink、FramedSource来为请求该ServerMediaSubsession的多个客户端服务
-    	（一对多，节省服务器端资源）
+			reuseFirstSource为false	
+				服务器端为每个对ServerMediaSubsession的请求创建一个StreamState对象
+				（多对多，需要占用服务器端较多资源）
 
-	reuseFirstSource为false	则服务器端为每个对ServerMediaSubsession的请求创建一个StreamState对象
-	（多对多，需要占用服务器端较多资源）
-
-	fStreamStates是streamState数组
+		fStreamStates 是 streamState数组     RTSPClientSession 的属性
 
     */ 
     
-  }
+  	}
 
-  // Record these destinations as being for this client session id:
-  Destinations* destinations;
-  if (tcpSocketNum < 0) { // UDP
-    destinations = new Destinations(destinationAddr, clientRTPPort, clientRTCPPort);
-  } else { // TCP tcpSocketNum=rtsp端口  rtpChannelId=0  rtcpChannelId=1 
-    destinations = new Destinations(tcpSocketNum, rtpChannelId, rtcpChannelId);
-  }
-  fDestinationsHashTable->Add((char const*)clientSessionId, destinations);
+	// Record these destinations as being for this client session id:
+	Destinations* destinations;
+	if (tcpSocketNum < 0) { // UDP
+	    destinations = new Destinations(destinationAddr, clientRTPPort, clientRTCPPort);
+	} else { // TCP tcpSocketNum=rtsp端口  rtpChannelId=0  rtcpChannelId=1 
+		destinations = new Destinations(tcpSocketNum, rtpChannelId, rtcpChannelId);
+	}
+	// 保存RTP/RTCP包发送的目的地 
+	// UDP=destinationAddr  clientRTPPort, clientRTCPPort 	ip地址				rtp/rtcp端口
+	// TCP=tcpSocketNum  rtpChannelId, rtcpChannelId		RtspTCPsocket套接字 rtp/rtcp通道
+	//
+	// 在 StreamState::startPlaying 会设置好发送的channelID/port
+	//
+  	fDestinationsHashTable->Add((char const*)clientSessionId, destinations);
 }
 
 void OnDemandServerMediaSubsession::startStream(unsigned clientSessionId,
@@ -272,6 +318,7 @@ void OnDemandServerMediaSubsession::pauseStream(unsigned /*clientSessionId*/,
 						void* streamToken) {
   // Pausing isn't allowed if multiple clients are receiving data from
   // the same source:
+  // 在多客户端重复使用同一个Source的情况下 Pause/Seek命令不能使用
   if (fReuseFirstSource) return;
 
   StreamState* streamState = (StreamState*)streamToken;

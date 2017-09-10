@@ -105,7 +105,7 @@ NetAddressList::NetAddressList(char const* hostname)
 
   host = (struct hostent*)resolvGetHostByName((char*)hostname, (char*)&hostentBuf, sizeof hostentBuf);
 #else
-  host = gethostbyname((char*)hostname);
+  host = gethostbyname((char*)hostname); // 如果hostname不是IP地址 将要通过DNS查询IP地址
 #endif
   if (host == NULL || host->h_length != 4 || host->h_addr_list == NULL) return; // no luck
 
@@ -113,7 +113,7 @@ NetAddressList::NetAddressList(char const* hostname)
   // First, count the number of addresses:
   u_int8_t const** hAddrPtr1 = hAddrPtr;
   while (*hAddrPtr1 != NULL) {
-    ++fNumAddresses;
+    ++fNumAddresses; // 计算IP地址的长度 
     ++hAddrPtr1;
   }
 

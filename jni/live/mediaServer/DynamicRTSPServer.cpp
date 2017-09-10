@@ -171,6 +171,7 @@ static ServerMediaSession* createNewSMS(UsageEnvironment& env,
     NEW_SMS("MPEG-1 or 2 Program Stream");
     MPEG1or2FileServerDemux* demux
       = MPEG1or2FileServerDemux::createNew(env, fileName, reuseSource);
+	// 添加视频和音频各自的subsession 
     sms->addSubsession(demux->newVideoServerMediaSubsession());
     sms->addSubsession(demux->newAudioServerMediaSubsession());
   } else if (strcmp(extension, ".vob") == 0) {
@@ -178,6 +179,7 @@ static ServerMediaSession* createNewSMS(UsageEnvironment& env,
     NEW_SMS("VOB (MPEG-2 video with AC-3 audio)");
     MPEG1or2FileServerDemux* demux
       = MPEG1or2FileServerDemux::createNew(env, fileName, reuseSource);
+	// 添加视频和音频各自的subsession 
     sms->addSubsession(demux->newVideoServerMediaSubsession());
     sms->addSubsession(demux->newAC3AudioServerMediaSubsession());
   } else if (strcmp(extension, ".ts") == 0) {

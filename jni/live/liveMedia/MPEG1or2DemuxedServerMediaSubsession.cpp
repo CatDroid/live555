@@ -52,6 +52,7 @@ FramedSource* MPEG1or2DemuxedServerMediaSubsession
 ::createNewStreamSource(unsigned clientSessionId, unsigned& estBitrate) {
   FramedSource* es = NULL;
   do {
+  	// 在这里创建FramedSource ByteStreamFileSource 
     es = fOurDemux.newElementaryStream(clientSessionId, fStreamIdTag);
     if (es == NULL) break;
 

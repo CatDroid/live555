@@ -947,7 +947,7 @@ netAddressBits MediaSubsession::connectionEndpointAddress() const {
     char const* endpointString = connectionEndpointName();
     if (endpointString == NULL) {
       endpointString = parentSession().connectionEndpointName();
-    }
+    }// 如果媒体级没有c= 就用会话级的c= (connnect infomation 连接信息 c-line )
     if (endpointString == NULL) break;
 
     // Now, convert this name to an address, if we can:

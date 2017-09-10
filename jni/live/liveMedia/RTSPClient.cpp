@@ -1203,9 +1203,9 @@ Boolean RTSPClient::handleSETUPResponse(MediaSubsession& subsession, char const*
     } else {
       // Normal case.
       // Set the RTP and RTCP sockets' destination address and port from the information in the SETUP response (if present):
-      netAddressBits destAddress = subsession.connectionEndpointAddress();
+      netAddressBits destAddress = subsession.connectionEndpointAddress(); // SDP中的c= 地址
       if (destAddress == 0) destAddress = fServerAddress;
-      subsession.setDestinations(destAddress);
+      subsession.setDestinations(destAddress); // 设置媒体的地址 根据SDP c-line 
     }
 
     success = True;

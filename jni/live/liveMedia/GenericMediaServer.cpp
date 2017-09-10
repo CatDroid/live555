@@ -51,12 +51,15 @@ ServerMediaSession* GenericMediaServer
 void GenericMediaServer::removeServerMediaSession(ServerMediaSession* serverMediaSession) {
   if (serverMediaSession == NULL) return;
   
-  fServerMediaSessions->Remove(serverMediaSession->streamName());
+  fServerMediaSessions->Remove(serverMediaSession->streamName());// 从HashTable中移除 
   if (serverMediaSession->referenceCount() == 0) {
-    Medium::close(serverMediaSession);
-  } else {
-    serverMediaSession->deleteWhenUnreferenced() = True;
+    Medium::close(serverMediaSession);// 如果还没有引用的话 析构ServerMediaSession
+  } else { // 引用计数为1 >0 而且从Table中已经移除
+    serverMediaSession->deleteWhenUnreferenced() = True; 
+	// 如果还有引用 但HashTable已移除记录 那么设置这个ServerMediaSession可删除
   }
+  // ClientSession::~ClientSession 客户断开这次会话 ServerMediaSession如果之前没有设置 
+  // deleteWhenUnreferenced() 那么这个 ServerMediaSession不会被从HashTable中移除
 }
 
 void GenericMediaServer::removeServerMediaSession(char const* streamName) {
@@ -282,10 +285,14 @@ GenericMediaServer::ClientSession::~ClientSession() {
   sprintf(sessionIdStr, "%08X", fOurSessionId);
   fOurServer.fClientSessions->Remove(sessionIdStr);
   
-  if (fOurServerMediaSession != NULL) {
+  if (fOurServerMediaSession != NULL) { 
+  	// 客户端断开的时候 会对ServerMediaSession减少引用 
+  	// 如果 ServerMediaSession 引用为0的话，就会从RtspServer的HashTable中移除(关联的RtpSink FrameSource也会删除)
+  	// 下一次有客户要连接该streamName 就重新建 ServerMediaSession 
     fOurServerMediaSession->decrementReferenceCount();
     if (fOurServerMediaSession->referenceCount() == 0
 	&& fOurServerMediaSession->deleteWhenUnreferenced()) {
+	// 如果引用数为0 但是 没有设置 deleteWhenUnreferenced = true 那么 不会从table中删除
       fOurServer.removeServerMediaSession(fOurServerMediaSession);
       fOurServerMediaSession = NULL;
     }

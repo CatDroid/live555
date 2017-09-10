@@ -44,6 +44,8 @@ private:
       // called only by createNew();
   virtual ~MPEG1or2DemuxedServerMediaSubsession();
 
+  // 本地回放一般都需要实现下面4个函数 
+  
 private: // redefined virtual functions
   virtual void seekStreamSource(FramedSource* inputSource, double& seekNPT, double streamDuration, u_int64_t& numBytes);
   virtual FramedSource* createNewStreamSource(unsigned clientSessionId,
