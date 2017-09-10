@@ -63,7 +63,7 @@ TaskToken BasicTaskScheduler0::scheduleDelayedTask(int64_t microseconds,
   DelayInterval timeToDelay((long)(microseconds/1000000), (long)(microseconds%1000000));
   AlarmHandler* alarmHandler = new AlarmHandler(proc, clientData, timeToDelay);
   fDelayQueue.addEntry(alarmHandler);
-  // fDelayQueue »áÔÚ BasicTaskScheduler::SingleStep Ê¹ÓÃ  
+  // fDelayQueue ä¼šåœ¨ BasicTaskScheduler::SingleStep ä½¿ç”¨  
 
   return (void*)(alarmHandler->token());
 }
@@ -74,10 +74,10 @@ void BasicTaskScheduler0::unscheduleDelayedTask(TaskToken& prevTask) {
   delete alarmHandler;
 }
 
-// ÐèÒª ´´½¨Ò»¸öÏß³Ì Ïß³ÌÖÐµ÷ÓÃ
+// éœ€è¦ åˆ›å»ºä¸€ä¸ªçº¿ç¨‹ çº¿ç¨‹ä¸­è°ƒç”¨
 // 	envir().taskScheduler().doEventLoop(&stream->ftloop);
 // 
-//	Èç¹û stream->ftloop = 1 ¾Í»á´ÓdoEventLoopÖÐÍË³ö
+//	å¦‚æžœ stream->ftloop = 1 å°±ä¼šä»ŽdoEventLoopä¸­é€€å‡º
 void BasicTaskScheduler0::doEventLoop(char volatile* watchVariable) {
   // Repeatedly loop, handling readble sockets and timed events:
   while (1) {

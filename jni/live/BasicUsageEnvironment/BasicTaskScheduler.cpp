@@ -55,6 +55,7 @@ void BasicTaskScheduler::schedulerTickTask(void* clientData) {
   ((BasicTaskScheduler*)clientData)->schedulerTickTask();
 }
 
+// 定时10ms执行一次 这样eventLoop()就不会一直死掉在select中
 void BasicTaskScheduler::schedulerTickTask() {
   scheduleDelayedTask(fMaxSchedulerGranularity, schedulerTickTask, this);
 }
